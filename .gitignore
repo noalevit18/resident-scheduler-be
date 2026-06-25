@@ -1,0 +1,108 @@
+# ==============================================================================
+# Python Environment & Virtual Environments
+# ==============================================================================
+# Exclude virtual environments
+.venv/
+venv/
+ENV/
+env/
+pythonenv/
+
+# Pipenv and Poetry locks/environments (uncomment if you want to ignore lock files, though usually tracked)
+# .venv
+# Pipfile.lock
+# poetry.lock
+
+# ==============================================================================
+# Byte-compiled / optimized / DLL files
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# ==============================================================================
+# Distribution / Packaging
+# ==============================================================================
+bin/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==============================================================================
+# Jupyter Notebooks and Data Science
+# ==============================================================================
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# Profile information
+.prof
+
+# ==============================================================================
+# Testing, Coverage, and Code Quality
+# ==============================================================================
+.htmlcov/
+.tox/
+.nosenv/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.coveragerc
+
+# MyPy/Linting cache
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.black
+
+# ==============================================================================
+# Environment Variables & Secrets (CRITICAL)
+# ==============================================================================
+.env
+.yaml
+*.env
+*.secret
+
+# ==============================================================================
+# IDEs and Editors (Optional but highly recommended)
+# ==============================================================================
+# JetBrains/PyCharm
+.idea/
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
