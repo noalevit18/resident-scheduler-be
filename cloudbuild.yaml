@@ -1,16 +1,17 @@
 steps:
-  # Step 1: Build the Docker image from your Dockerfile
+  # Step 1: Build the container image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', '$_IMAGE_NAME', '.']
+    args:
+      - 'build'
+      - '-t'
+      - 'me-west1-docker.pkg.dev/$PROJECT_ID/app-repo/resident-scheduler-be:$SHORT_SHA'
+      - '.'
 
-  # Step 2: Push the image to your container registry
+  # Step 2: Push the container image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '$_IMAGE_NAME']
+    args:
+      - 'push'
+      - 'me-west1-docker.pkg.dev/$PROJECT_ID/app-repo/resident-scheduler-be:$SHORT_SHA'
 
-# This fixes the build logs error
 options:
   logging: CLOUD_LOGGING_ONLY
-
-substitutions:
-  _IMAGE_NAME: 'gcr.io/$PROJECT_ID/resident-scheduler-be:$SHORT_SHA'
-  SHORT_SHA: 'latest'
