@@ -11,5 +11,5 @@ steps:
 options:
   logging: CLOUD_LOGGING_ONLY
 
-images:
-  - 'europe-west2-docker.pkg.dev/hypnagogic-mark-q67s8/cloud-run-source-deploy/resident-scheduler-be:$COMMIT_SHA'
+substitutions:
+  _IMAGE_NAME: 'gcr.io/hypnagogic-mark-q67s8/resident-scheduler-be:$COMMIT_SHA'
