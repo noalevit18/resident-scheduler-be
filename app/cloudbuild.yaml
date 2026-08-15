@@ -1,0 +1,15 @@
+steps:
+  # Step 1: Build the Docker image from your Dockerfile
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '$_IMAGE_NAME', '.']
+
+  # Step 2: Push the image to your container registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_IMAGE_NAME']
+
+# This fixes the build logs error
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - 'europe-west2-docker.pkg.dev/hypnagogic-mark-q67s8/cloud-run-source-deploy/resident-scheduler-be:$COMMIT_SHA'
