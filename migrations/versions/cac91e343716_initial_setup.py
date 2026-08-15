@@ -31,7 +31,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('slug')
+    sa.UniqueConstraint('account_name')
     )
     op.create_table('constraints_types',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
