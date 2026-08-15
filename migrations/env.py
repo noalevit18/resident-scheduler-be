@@ -19,10 +19,23 @@ target_metadata = Base.metadata
 env_path = os.path.join(os.path.dirname(__file__), '..', 'app', '.env')
 
 load_dotenv(env_path)
-database_url = os.environ.get("DATABASE_URL")
+USER = os.getenv("POSTGRES_USER")
+PASSWORD = os.getenv("POSTGRES_PASSWORD")
+HOST = os.getenv("POSTGRES_HOST")
+PORT = os.getenv("POSTGRES_PORT")
+DB_NAME = os.getenv("POSTGRES_DB_NAME")
+database_url = f"postgresql+psycopg://{USER}:{PASSWORD}@{HOST}:{PORT}/{DB_NAME}?sslmode=require"
 
-if not database_url:
-    raise ValueError("DATABASE_URL not found in environment variables. Check your .env file.")
+if not USER:
+    raise ValueError("DATABASE_USER not found in environment variables. Check your .env file.")
+if not PASSWORD:
+    raise ValueError("DATABASE_PASSWORD not found in environment variables. Check your .env file.")
+if not HOST:
+    raise ValueError("DATABASE_HOST not found in environment variables. Check your .env file.")
+if not PORT:
+    raise ValueError("DATABASE_PORT not found in environment variables. Check your .env file.")
+if not DB_NAME:
+    raise ValueError("DATABASE_DB_NAME not found in environment variables. Check your .env file.")
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
