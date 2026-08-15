@@ -66,7 +66,7 @@ class Account(SnakeCaseModel):
 
 
 class AccountUpdate(SnakeCaseModel):
-    slug: Optional[str] = Field(None, min_length=1, max_length=100)
+    account_name: Optional[str] = Field(None, min_length=1, max_length=100)
     country: Optional[str] = Field(None, min_length=1, max_length=100)
     state: Optional[str] = None
     city: Optional[str] = None
@@ -115,7 +115,6 @@ class Unit(SnakeCaseModel):
     division_id: UUID
     name: str = Field(..., min_length=1, max_length=100)
     created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
 
 
 class UnitCreate(Unit):
@@ -131,7 +130,6 @@ class UnitResponse(Unit):
     model_config = ConfigDict(from_attributes=True)
     division_id: UUID
     created_at: datetime
-    updated_at: datetime
 
 
 # ==========================================
@@ -181,8 +179,8 @@ class CertificationResponse(Certification):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    division_id: UUID
     unit_id: UUID
+    created_at: datetime
 
 
 
@@ -249,10 +247,11 @@ class SeniorResponse(Senior):
 
 class ShiftStation(SnakeCaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    created_at: Optional[datetime] = None
 
 
 class ShiftStationCreate(ShiftStation):
-    division_id: UUID
+    unit_id: UUID
 
 
 class ShiftStationUpdate(SnakeCaseModel):
@@ -263,7 +262,7 @@ class ShiftStationResponse(ShiftStation):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    division_id: UUID
+    unit_id: UUID
     created_at: datetime
 
 
@@ -323,11 +322,11 @@ class Shift(SnakeCaseModel):
 
 
 class ShiftCreate(Shift):
-    division_id: UUID
+    unit_id: UUID
 
 
 class ShiftUpdate(SnakeCaseModel):
-    shift_date: date
+    shift_date: Optional[date] = None
     shift_station_id: Optional[int] = None
     staff_member_id: Optional[UUID] = None
 
@@ -336,7 +335,7 @@ class ShiftResponse(Shift):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    division_id: UUID
+    unit_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -346,15 +345,18 @@ class ShiftResponse(Shift):
 # ==========================================
 
 class ConstraintType(SnakeCaseModel):
+    account_id: UUID
     name: str = Field(..., min_length=1, max_length=100)
     color: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class ConstraintTypeCreate(ConstraintType):
-    division_id: UUID
+    account_id: UUID
 
 
 class ConstraintTypeUpdate(SnakeCaseModel):
+    account_id: Optional[UUID] = None
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     color: Optional[str] = None
 
@@ -363,7 +365,8 @@ class ConstraintTypeResponse(ConstraintType):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    division_id: UUID
+    account_id: UUID
+    created_at: datetime
 
 
 # ==========================================
@@ -381,7 +384,7 @@ class ConstraintCreate(Constraint):
 
 
 class ConstraintUpdate(SnakeCaseModel):
-    constraint_date: date
+    constraint_date: Optional[date] = None
     constraint_type_id: Optional[int] = None
     staff_member_id: Optional[UUID] = None
 
@@ -404,6 +407,7 @@ class ScheduleStaffMember(SnakeCaseModel):
     staff_member_id: UUID
     station_id: int
     is_stand_by: bool = False
+    created_at: Optional[datetime] = None
 
 
 class ScheduleStaffMemberCreate(ScheduleStaffMember):
@@ -411,7 +415,7 @@ class ScheduleStaffMemberCreate(ScheduleStaffMember):
 
 
 class ScheduleStaffMemberUpdate(SnakeCaseModel):
-    schedule_date: date
+    schedule_date: Optional[date] = None
     staff_member_id: Optional[UUID] = None
     station_id: Optional[int] = None
     is_stand_by: Optional[bool] = None
@@ -432,6 +436,7 @@ class ScheduleStaffMemberResponse(ScheduleStaffMember):
 class ScheduleSenior(SnakeCaseModel):
     schedule_date: date
     senior_id: int
+    created_at: Optional[datetime] = None
 
 
 class ScheduleSeniorCreate(ScheduleSenior):
@@ -439,7 +444,7 @@ class ScheduleSeniorCreate(ScheduleSenior):
 
 
 class ScheduleSeniorUpdate(SnakeCaseModel):
-    schedule_date: date
+    schedule_date: Optional[date] = None
     senior_id: Optional[int] = None
 
 class ScheduleSeniorResponse(ScheduleSenior):
@@ -457,6 +462,8 @@ class ScheduleSeniorResponse(ScheduleSenior):
 class ScheduleVersion(SnakeCaseModel):
     is_published: bool = False
     schedule: Dict[str, Any] = {}
+    update_admin_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
 
 
 class ScheduleVersionCreate(ScheduleVersion):
@@ -466,6 +473,7 @@ class ScheduleVersionCreate(ScheduleVersion):
 class ScheduleVersionUpdate(SnakeCaseModel):
     is_published: Optional[bool] = None
     schedule: Optional[Dict[str, Any]] = None
+    update_admin_id: Optional[UUID] = None
 
 
 class ScheduleVersionResponse(ScheduleVersion):
