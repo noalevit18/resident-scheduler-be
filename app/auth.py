@@ -1,5 +1,4 @@
 import os
-
 from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -8,16 +7,21 @@ from firebase_admin import credentials, auth
 
 load_dotenv()
 
-# Initialize FirebaseI  Admin if not already initialized
+# Initialize Firebase Admin if not already initialized
 try:
     firebase_admin.get_app()
 except ValueError:
-    print('except')
-    cred = credentials.Certificate(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-    firebase_admin.initialize_app(cred)
+    google_creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    
+    if google_creds and os.path.exists(google_creds):
+        # Local development using service account file
+        cred = credentials.Certificate(google_creds)
+        firebase_admin.initialize_app(cred)
+    else:
+        # Production on GCP: Use Application Default Credentials (ADC)
+        firebase_admin.initialize_app()
 
 security = HTTPBearer()
-
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
