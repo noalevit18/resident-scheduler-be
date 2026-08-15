@@ -6,5 +6,5 @@ echo "Running database migrations..."
 alembic upgrade head
 
 # Start the application
-echo "Starting FastAPI application..."
-CMD exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+echo "Starting FastAPI application on port ${PORT:-8000}..."
+exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"
