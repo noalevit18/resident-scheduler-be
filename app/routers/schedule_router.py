@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
-from schemas.schedule_schema import ScheduleCreate, ScheduleResponse
-from services.schedule_service import ScheduleService
-from dependencies import get_schedule_service
+from app.schemas.schedule_schema import ScheduleCreate, ScheduleResponse
+from app.services.schedule_service import ScheduleService
+from app.dependencies import get_schedule_service
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 

@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models.models import Unit
+from app.models.models import Unit
 from uuid import UUID
 
 class UnitRepository:

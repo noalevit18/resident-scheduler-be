@@ -1,5 +1,5 @@
-from repositories.senior_repository import SeniorRepository
-from schemas.schemas import SeniorCreate
+from app.repositories.senior_repository import SeniorRepository
+from app.schemas.schemas import SeniorCreate
 from uuid import UUID
 
 class SeniorService:

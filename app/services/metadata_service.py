@@ -1,4 +1,4 @@
-from repositories.metadata_repository import MetadataRepository
+from app.repositories.metadata_repository import MetadataRepository
 
 class MetadataService:
     def __init__(self, repository: MetadataRepository):

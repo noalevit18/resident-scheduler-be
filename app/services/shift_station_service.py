@@ -1,5 +1,5 @@
-from repositories.shift_station_repository import ShiftStationRepository
-from schemas.schemas import ShiftStationCreate
+from app.repositories.shift_station_repository import ShiftStationRepository
+from app.schemas.schemas import ShiftStationCreate
 from uuid import UUID
 
 class ShiftStationService:

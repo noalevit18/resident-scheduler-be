@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from models.models import StaffMember
-from schemas.schemas import StaffCreate
+from app.models.models import StaffMember
+from app.schemas.schemas import StaffCreate
 from uuid import UUID
 
 class StaffRepository:

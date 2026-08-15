@@ -1,5 +1,5 @@
-from repositories.constraint_type_repository import ConstraintTypeRepository
-from schemas.schemas import ConstraintTypeCreate
+from app.repositories.constraint_type_repository import ConstraintTypeRepository
+from app.schemas.schemas import ConstraintTypeCreate
 from uuid import UUID
 
 class ConstraintTypeService:

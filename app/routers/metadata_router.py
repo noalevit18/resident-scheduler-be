@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from services.metadata_service import MetadataService
-from dependencies import get_metadata_service
+from app.services.metadata_service import MetadataService
+from app.dependencies import get_metadata_service
 
 router = APIRouter(prefix="/metadata", tags=["metadata"])
 

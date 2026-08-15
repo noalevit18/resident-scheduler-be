@@ -1,5 +1,5 @@
-from repositories.station_repository import StationRepository
-from schemas.schemas import StationCreate
+from app.repositories.station_repository import StationRepository
+from app.schemas.schemas import StationCreate
 from uuid import UUID
 
 class StationService:

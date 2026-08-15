@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
-from schemas.schemas import Shift, ShiftCreate, ShiftStation, ShiftStationCreate
-from services.shift_service import ShiftService
-from services.shift_station_service import ShiftStationService
-from dependencies import get_shift_service, get_shift_station_service
+from app.schemas.schemas import Shift, ShiftCreate, ShiftStation, ShiftStationCreate
+from app.services.shift_service import ShiftService
+from app.services.shift_station_service import ShiftStationService
+from app.dependencies import get_shift_service, get_shift_station_service
 
 router = APIRouter(prefix="/shifts", tags=["shifts"])
 

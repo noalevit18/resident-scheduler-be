@@ -1,5 +1,5 @@
-from repositories.staff_repository import StaffRepository
-from schemas.schemas import Staff, StaffCreate
+from app.repositories.staff_repository import StaffRepository
+from app.schemas.schemas import Staff, StaffCreate
 from uuid import UUID
 
 class StaffService:

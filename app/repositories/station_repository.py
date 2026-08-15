@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from models.models import Station
-from schemas.schemas import StationCreate
+from app.models.models import Station
+from app.schemas.schemas import StationCreate
 from uuid import UUID
 
 class StationRepository:

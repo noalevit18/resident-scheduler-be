@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
-from schemas.schemas import Staff, StaffCreate
-from services.staff_service import StaffService
-from dependencies import get_staff_service
+from app.schemas.schemas import Staff, StaffCreate
+from app.services.staff_service import StaffService
+from app.dependencies import get_staff_service
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 

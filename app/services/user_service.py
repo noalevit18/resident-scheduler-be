@@ -1,6 +1,6 @@
-from repositories.user_repository import UserRepository
-from services.unit_service import UnitService
-from schemas.schemas import User, UserResponse
+from app.repositories.user_repository import UserRepository
+from app.services.unit_service import UnitService
+from app.schemas.schemas import User, UserResponse
 from uuid import UUID
 
 class UserService:

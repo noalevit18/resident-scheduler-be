@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from models.models import Shift
-from schemas.schemas import ShiftCreate
+from app.models.models import Shift
+from app.schemas.schemas import ShiftCreate
 from uuid import UUID
 
 class ShiftRepository:

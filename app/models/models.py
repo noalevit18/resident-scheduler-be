@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-from database import Base
+from app.database import Base
 
 
 class RecurrenceType(str, enum.Enum):

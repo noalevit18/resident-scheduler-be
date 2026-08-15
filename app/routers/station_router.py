@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
-from schemas.schemas import Station, StationCreate
-from services.station_service import StationService
-from dependencies import get_station_service
+from app.schemas.schemas import Station, StationCreate
+from app.services.station_service import StationService
+from app.dependencies import get_station_service
 
 router = APIRouter(prefix="/stations", tags=["stations"])
 

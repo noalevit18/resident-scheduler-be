@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from models.models import ConstraintType
-from schemas.schemas import ConstraintTypeCreate
+from app.models.models import ConstraintType
+from app.schemas.schemas import ConstraintTypeCreate
 from uuid import UUID
 
 class ConstraintTypeRepository:

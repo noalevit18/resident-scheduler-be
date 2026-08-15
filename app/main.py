@@ -1,18 +1,23 @@
 import os
+import sys
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware 
-from routers import (
+from app.routers import (
     staff_router, station_router, senior_router, shift_router, 
     constraint_router, schedule_router, user_router, metadata_router
 )
-from database import engine
-from models import models
+from app.database import engine
+from app.models import models
+
+app = FastAPI(title="Resident Scheduler API")
 
 # Create tables
 models.Base.metadata.create_all(bind=engine)
-
-app = FastAPI(title="Resident Scheduler API")
 
 
 allowed_origins_raw = os.getenv("ALLOWED_CORS_ORIGINS", "http://localhost:3000")

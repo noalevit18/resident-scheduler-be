@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from schemas.schemas import UnitResponse
-from models.models import Unit as UnitModel
+from app.schemas.schemas import UnitResponse
+from app.models.models import Unit as UnitModel
 
 
 

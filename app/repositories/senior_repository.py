@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from models.models import Senior
-from schemas.schemas import SeniorCreate
+from app.models.models import Senior
+from app.schemas.schemas import SeniorCreate
 from uuid import UUID
 
 class SeniorRepository:

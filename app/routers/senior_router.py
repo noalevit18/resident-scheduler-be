@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
-from schemas.schemas import Senior, SeniorCreate
-from services.senior_service import SeniorService
-from dependencies import get_senior_service
+from app.schemas.schemas import Senior, SeniorCreate
+from app.services.senior_service import SeniorService
+from app.dependencies import get_senior_service
 
 
 router = APIRouter(prefix="/seniors", tags=["seniors"])

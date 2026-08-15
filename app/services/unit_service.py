@@ -1,4 +1,4 @@
-from repositories.unit_repository import UnitRepository
+from app.repositories.unit_repository import UnitRepository
 from uuid import UUID
 
 class UnitService:

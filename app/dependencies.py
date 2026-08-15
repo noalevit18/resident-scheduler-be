@@ -1,31 +1,31 @@
 from sqlalchemy.orm import Session
 from fastapi import Depends
-from database import get_db
+from app.database import get_db
 
 # Repositories
-from repositories.constraint_repository import ConstraintRepository
-from repositories.constraint_type_repository import ConstraintTypeRepository
-from repositories.metadata_repository import MetadataRepository
-from repositories.staff_repository import StaffRepository
-from repositories.senior_repository import SeniorRepository
-from repositories.shift_repository import ShiftRepository
-from repositories.shift_station_repository import ShiftStationRepository
-from repositories.station_repository import StationRepository
-from repositories.unit_repository import UnitRepository
-from repositories.user_repository import UserRepository
+from app.repositories.constraint_repository import ConstraintRepository
+from app.repositories.constraint_type_repository import ConstraintTypeRepository
+from app.repositories.metadata_repository import MetadataRepository
+from app.repositories.staff_repository import StaffRepository
+from app.repositories.senior_repository import SeniorRepository
+from app.repositories.shift_repository import ShiftRepository
+from app.repositories.shift_station_repository import ShiftStationRepository
+from app.repositories.station_repository import StationRepository
+from app.repositories.unit_repository import UnitRepository
+from app.repositories.user_repository import UserRepository
 
 # Services
-from services.constraint_service import ConstraintService
-from services.constraint_type_service import ConstraintTypeService
-from services.staff_service import StaffService
-from services.senior_service import SeniorService
-from services.shift_service import ShiftService
-from services.shift_station_service import ShiftStationService
-from services.station_service import StationService
-from services.unit_service import UnitService
-from services.schedule_service import ScheduleService
-from services.user_service import UserService
-from services.metadata_service import MetadataService
+from app.services.constraint_service import ConstraintService
+from app.services.constraint_type_service import ConstraintTypeService
+from app.services.staff_service import StaffService
+from app.services.senior_service import SeniorService
+from app.services.shift_service import ShiftService
+from app.services.shift_station_service import ShiftStationService
+from app.services.station_service import StationService
+from app.services.unit_service import UnitService
+from app.services.schedule_service import ScheduleService
+from app.services.user_service import UserService
+from app.services.metadata_service import MetadataService
 
 # --- Repository Factories ---
 def get_constraint_repository(db: Session = Depends(get_db)): return ConstraintRepository(db)
