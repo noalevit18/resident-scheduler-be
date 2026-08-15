@@ -85,6 +85,7 @@ dmypy.json
 .yaml
 *.env
 *.secret
+serviceAccountKey.json
 
 # ==============================================================================
 # IDEs and Editors (Optional but highly recommended)

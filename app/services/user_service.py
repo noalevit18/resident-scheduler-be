@@ -1,0 +1,47 @@
+from repositories.user_repository import UserRepository
+from services.unit_service import UnitService
+from schemas.schemas import User, UserResponse
+from uuid import UUID
+
+class UserService:
+    def __init__(self, repository: UserRepository, unit_service: UnitService = None):
+        self.repository = repository
+        self.unit_service = unit_service
+
+    def get_all_users(self, division_id: UUID):
+        return self.repository.get_all(division_id)
+
+    def create_user(self, data: User):
+        return self.repository.create(data)
+
+    def update_user(self, user_id: UUID, division_id: UUID, user_data: dict):
+        return self.repository.update_user(user_id, division_id, user_data)
+
+    def login(self, email: str):
+        user = self.repository.get_by_email(email)
+        if not user:
+            raise ValueError("User not found")
+        if not user.is_active:
+            raise ValueError("User is inactive")
+        
+        user_response = UserResponse.model_validate(user)
+        
+        if user.unit_id and self.unit_service:
+            unit_data = self.unit_service.get_unit_details(user.unit_id)
+            if unit_data:
+                user_response.unit_name = unit_data.get("unit_name")
+                user_response.division_name = unit_data.get("division_name")
+                user_response.hospital_name = unit_data.get("hospital_name")
+        elif user.division_id and user.division:
+            user_response.division_name = user.division.name
+            if user.division.account:
+                user_response.hospital_name = user.division.account.hospital_name
+
+        return user_response
+
+    def delete_user(self, user_id: UUID, division_id: UUID):
+        if not self.repository.delete(user_id, division_id):
+            raise ValueError("User not found")
+        return True
+
+

@@ -1,7 +1,10 @@
 fastapi
 uvicorn
 sqlalchemy
-psycopg2-binary
-pydantic
+psycopg[binary]
+pydantic[email]
 pydantic-settings
 python-dotenv
+alembic
+firebase_admin
+

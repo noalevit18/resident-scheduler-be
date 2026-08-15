@@ -7,8 +7,8 @@ class ConstraintRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all(self, account_id: UUID):
-        return self.db.query(Constraint).filter(Constraint.account_id == account_id).all()
+    def get_all(self, unit_id: UUID):
+        return self.db.query(Constraint).filter(Constraint.unit_id == unit_id).all()
 
     def create(self, data: ConstraintCreate):
         db_obj = Constraint(**data.model_dump())

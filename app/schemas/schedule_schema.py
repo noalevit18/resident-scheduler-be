@@ -4,7 +4,7 @@ from uuid import UUID
 
 class ScheduleStationResidents(BaseModel):
     station_id: int
-    resident_ids: List[UUID]
+    staff_member_ids: List[UUID]
 
 class ScheduleCreate(BaseModel):
     account_id: UUID
