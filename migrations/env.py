@@ -80,9 +80,6 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
 
-    # Get the URL directly from your env variable
-    database_url = os.environ.get("DATABASE_URL")
-
     # Create the engine directly using the URL
     connectable = create_engine(database_url)
     with connectable.connect() as connection:
