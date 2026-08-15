@@ -12,4 +12,4 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 substitutions:
-  _IMAGE_NAME: 'gcr.io/hypnagogic-mark-q67s8/resident-scheduler-be:$COMMIT_SHA'
+  _IMAGE_NAME: 'gcr.io/$PROJECT_ID/resident-scheduler-be:$COMMIT_SHA'
