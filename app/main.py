@@ -31,14 +31,14 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-app.include_router(user_router.router)
-app.include_router(staff_router.router)
-app.include_router(station_router.router)
-app.include_router(senior_router.router)
-app.include_router(shift_router.router)
-app.include_router(constraint_router.router)
-app.include_router(schedule_router.router)
-app.include_router(metadata_router.router)
+app.include_router(user_router.router, prefix="/api")
+app.include_router(staff_router.router, prefix="/api")
+app.include_router(station_router.router, prefix="/api")
+app.include_router(senior_router.router, prefix="/api")
+app.include_router(shift_router.router, prefix="/api")
+app.include_router(constraint_router.router, prefix="/api")
+app.include_router(schedule_router.router, prefix="/api")
+app.include_router(metadata_router.router, prefix="/api")
 
 @app.get("/")
 def read_root():

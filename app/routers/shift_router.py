@@ -8,11 +8,11 @@ from app.dependencies import get_shift_service, get_shift_station_service
 router = APIRouter(prefix="/shifts", tags=["shifts"])
 
 # Shift CRUD
-@router.get("/", response_model=list[Shift])
+@router.get("", response_model=list[Shift])
 def get_shifts(account_id: UUID, service: ShiftService = Depends(get_shift_service)):
     return service.get_all_shifts(account_id)
 
-@router.post("/", response_model=Shift)
+@router.post("", response_model=Shift)
 def create_shift(data: ShiftCreate, service: ShiftService = Depends(get_shift_service)):
     return service.create_shift(data)
 

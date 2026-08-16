@@ -27,11 +27,11 @@ def update_user(user_id: UUID, division_id: UUID, update_data: UserUpdate, servi
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return {"message": "User updated"}
 
-@router.get("/", response_model=list[User])
+@router.get("", response_model=list[User])
 def get_users(division_id: UUID, service: UserService = Depends(get_user_service)):
     return service.get_all_users(division_id)
 
-@router.post("/", response_model=User)
+@router.post("", response_model=User)
 def create_user(data: User, service: UserService = Depends(get_user_service)):
     return service.create_user(data)
 

@@ -10,11 +10,11 @@ router = APIRouter(prefix="/constraints", tags=["constraints"])
 
 
 # Constraint CRUD
-@router.get("/", response_model=list[Constraint])
+@router.get("", response_model=list[Constraint])
 def get_constraints(account_id: UUID, service: ConstraintService = Depends(get_constraint_service)):
     return service.get_all_constraints(account_id)
 
-@router.post("/", response_model=Constraint)
+@router.post("", response_model=Constraint)
 def create_constraint(data: ConstraintCreate, service: ConstraintService = Depends(get_constraint_service)):
     return service.create_constraint(data)
 

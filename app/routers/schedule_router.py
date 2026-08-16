@@ -6,6 +6,6 @@ from app.dependencies import get_schedule_service
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
 
-@router.post("/", response_model=ScheduleResponse)
+@router.post("", response_model=ScheduleResponse)
 def create_schedule(data: ScheduleCreate, service: ScheduleService = Depends(get_schedule_service)):
     return service.process_schedule(data)

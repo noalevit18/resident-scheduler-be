@@ -7,7 +7,7 @@ from app.dependencies import get_staff_service
 router = APIRouter(prefix="/staff", tags=["staff"])
 
 
-@router.get("/", response_model=list[Staff])
+@router.get("", response_model=list[Staff])
 def get_staff(account_id: UUID, service: StaffService = Depends(get_staff_service)):
     return service.get_all_staff(account_id)
 
@@ -18,7 +18,7 @@ def get_staff_member(staff_id: UUID, account_id: UUID, service: StaffService = D
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-@router.post("/", response_model=Staff)
+@router.post("", response_model=Staff)
 def create_staff(staff_data: StaffCreate, service: StaffService = Depends(get_staff_service)):
     return service.create_staff(staff_data)
 
