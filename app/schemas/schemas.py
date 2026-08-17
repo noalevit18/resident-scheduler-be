@@ -1,220 +1,525 @@
-from pydantic import BaseModel, ConfigDict
-from uuid import UUID
+import enum
+import re
 from datetime import datetime, date
-from typing import List, Optional
-from enum import Enum
+from typing import Optional, List, Any, Dict
+from uuid import UUID
 
-class RecurrenceType(str, Enum):
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+
+
+# ==========================================
+# BASE MODEL
+# ==========================================
+
+class SnakeCaseModel(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_keys(cls, data):
+        if not isinstance(data, dict):
+            return data
+
+        normalized = {}
+        for key, value in data.items():
+            if isinstance(key, str):
+                normalized_key = re.sub(r"(?<!^)(?=[A-Z])", "_", key).lower()
+                normalized[normalized_key] = value
+            else:
+                normalized[key] = value
+
+        return normalized
+
+
+# ==========================================
+# ENUMS
+# ==========================================
+
+class RecurrenceType(str, enum.Enum):
     weekly = "weekly"
     every_x_days = "every-x-days"
     every_x_weeks = "every-x-weeks"
 
-class AdminRole(str, Enum):
-    owner = "owner"
-    admin = "admin"
 
-class AccountBase(BaseModel):
-    slug: str
-    country: str
+class UserRole(str, enum.Enum):
+    owner = "owner"
+    division_admin = "division_admin"
+    unit_admin = "unit_admin"
+    user = "user"
+
+
+class StaffRole(str, enum.Enum):
+    ATTENDING = "attending"
+    RESIDENT = "resident"
+    INTERN = "intern"
+    NURSE = "nurse"
+
+
+# ==========================================
+# ACCOUNT SCHEMAS
+# ==========================================
+
+class Account(SnakeCaseModel):
+    account_name: str = Field(..., min_length=1, max_length=100)
+    country: str = Field(..., min_length=1, max_length=100)
     state: Optional[str] = None
     city: Optional[str] = None
-    hospital_name: str
+    hospital_name: str = Field(..., min_length=1, max_length=200)
 
-class AccountCreate(AccountBase):
-    pass
 
-class Account(AccountBase):
+class AccountUpdate(SnakeCaseModel):
+    account_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    country: Optional[str] = Field(None, min_length=1, max_length=100)
+    state: Optional[str] = None
+    city: Optional[str] = None
+    hospital_name: Optional[str] = Field(None, min_length=1, max_length=200)
+
+
+class AccountResponse(Account):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     created_at: datetime
     updated_at: datetime
+
+
+# ==========================================
+# DIVISION SCHEMAS
+# ==========================================
+
+class Division(SnakeCaseModel):
+    id: Optional[UUID] = None
+    account_id: UUID
+    name: str = Field(..., min_length=1, max_length=100)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DivisionCreate(Division):
+    account_id: UUID
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class DivisionUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+
+
+class DivisionResponse(Division):
     model_config = ConfigDict(from_attributes=True)
 
-class ResidentRotationBase(BaseModel):
-    account_id: UUID
-    name: str
 
-class ResidentRotationCreate(ResidentRotationBase):
-    pass
+# ==========================================
+# UNIT SCHEMAS
+# ==========================================
 
-class ResidentRotation(ResidentRotationBase):
-    id: int
+class Unit(SnakeCaseModel):
+    id: Optional[UUID] = None
+    division_id: UUID
+    name: str = Field(..., min_length=1, max_length=100)
+    created_at: Optional[datetime] = None
+
+
+class UnitCreate(Unit):
+    division_id: UUID
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class UnitUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+
+
+class UnitResponse(Unit):
+    model_config = ConfigDict(from_attributes=True)
+    division_id: UUID
     created_at: datetime
-    updated_at: datetime
+
+
+# ==========================================
+# STAFF ROTATION SCHEMAS (Division level)
+# ==========================================
+
+
+class StaffRotation(SnakeCaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class StaffRotationCreate(StaffRotation):
+    division_id: UUID
+
+
+class StaffRotationUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+
+
+class StaffRotationResponse(StaffRotation):
     model_config = ConfigDict(from_attributes=True)
 
-class CertificationBase(BaseModel):
-    account_id: UUID
-    name: str
-
-class CertificationCreate(CertificationBase):
-    pass
-
-class Certification(CertificationBase):
     id: int
+    division_id: UUID
+    created_at: datetime
+
+
+# ==========================================
+# CERTIFICATION SCHEMAS
+# ==========================================
+
+class Certification(SnakeCaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    color: Optional[str] = None
+
+
+class CertificationCreate(Certification):
+    unit_id: UUID
+
+
+class CertificationUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    color: Optional[str] = None
+
+
+class CertificationResponse(Certification):
     model_config = ConfigDict(from_attributes=True)
 
-class ResidentBase(BaseModel):
-    account_id: UUID
-    name: str
+    id: int
+    unit_id: UUID
+    created_at: datetime
+
+
+
+# ==========================================
+# STAFF SCHEMAS
+# ==========================================
+
+
+class Staff(SnakeCaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    month: Optional[date] = None
+    rotation: Optional[int] = None
+    certifications_ids: Optional[List[int]] = []
+
+
+class StaffCreate(Staff):
+    unit_id: UUID
+
+
+class StaffUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    month: Optional[date] = None
     rotation: Optional[int] = None
     certifications_ids: Optional[List[int]] = None
 
-class ResidentCreate(ResidentBase):
-    pass
 
-class Resident(ResidentBase):
+class StaffResponse(Staff):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
+    unit_id: UUID
     created_at: datetime
     updated_at: datetime
+
+
+# ==========================================
+# SENIOR SCHEMAS
+# ==========================================
+
+class Senior(SnakeCaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class SeniorCreate(Senior):
+    unit_id: UUID
+
+
+class SeniorUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+
+
+class SeniorResponse(Senior):
     model_config = ConfigDict(from_attributes=True)
 
-class SeniorBase(BaseModel):
-    account_id: UUID
-    name: str
-
-class SeniorCreate(SeniorBase):
-    pass
-
-class Senior(SeniorBase):
     id: int
+    unit_id: UUID
     created_at: datetime
     updated_at: datetime
+
+
+# ==========================================
+# SHIFT STATION SCHEMAS
+# ==========================================
+
+class ShiftStation(SnakeCaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    created_at: Optional[datetime] = None
+
+
+class ShiftStationCreate(ShiftStation):
+    unit_id: UUID
+
+
+class ShiftStationUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+
+
+class ShiftStationResponse(ShiftStation):
     model_config = ConfigDict(from_attributes=True)
 
-class ShiftStationBase(BaseModel):
-    account_id: UUID
-    name: str
-
-class ShiftStationCreate(ShiftStationBase):
-    pass
-
-class ShiftStation(ShiftStationBase):
     id: int
+    unit_id: UUID
     created_at: datetime
-    updated_at: datetime
-    model_config = ConfigDict(from_attributes=True)
 
-class StationBase(BaseModel):
-    account_id: UUID
-    name: str
+
+# ==========================================
+# STATION SCHEMAS
+# ==========================================
+
+class Station(SnakeCaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
     is_default: bool = False
     certification_id: Optional[int] = None
     bg_color: Optional[str] = None
     border_color: Optional[str] = None
     optional: bool = False
-    min_residents: Optional[int] = None
+    min_staff_members: Optional[int] = None
+    active_days: Optional[List[int]] = []
+    recurrence_type: Optional[RecurrenceType] = None
+    recurrence_interval: Optional[int] = None
+    recurrence_base_date: Optional[date] = None
+
+
+class StationCreate(Station):
+    unit_id: UUID
+
+
+class StationUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    is_default: Optional[bool] = None
+    certification_id: Optional[int] = None
+    bg_color: Optional[str] = None
+    border_color: Optional[str] = None
+    optional: Optional[bool] = None
+    min_staff_members: Optional[int] = None
     active_days: Optional[List[int]] = None
     recurrence_type: Optional[RecurrenceType] = None
     recurrence_interval: Optional[int] = None
     recurrence_base_date: Optional[date] = None
 
-class StationCreate(StationBase):
-    pass
 
-class Station(StationBase):
-    id: int
-    created_at: datetime
-    updated_at: datetime
+class StationResponse(Station):
     model_config = ConfigDict(from_attributes=True)
 
-class ShiftBase(BaseModel):
-    account_id: UUID
-    row_date: date
+    id: int
+    unit_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+# ==========================================
+# SHIFT SCHEMAS
+# ==========================================
+
+class Shift(SnakeCaseModel):
+    shift_date: date
     shift_station_id: int
-    resident_id: UUID
+    staff_member_id: UUID
 
-class ShiftCreate(ShiftBase):
-    pass
 
-class Shift(ShiftBase):
-    id: int
-    created_at: datetime
-    updated_at: datetime
+class ShiftCreate(Shift):
+    unit_id: UUID
+
+
+class ShiftUpdate(SnakeCaseModel):
+    shift_date: Optional[date] = None
+    shift_station_id: Optional[int] = None
+    staff_member_id: Optional[UUID] = None
+
+
+class ShiftResponse(Shift):
     model_config = ConfigDict(from_attributes=True)
 
-class ConstraintTypeBase(BaseModel):
+    id: int
+    unit_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+# ==========================================
+# CONSTRAINT TYPE SCHEMAS
+# ==========================================
+
+class ConstraintType(SnakeCaseModel):
     account_id: UUID
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
+    color: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class ConstraintTypeCreate(ConstraintType):
+    account_id: UUID
+
+
+class ConstraintTypeUpdate(SnakeCaseModel):
+    account_id: Optional[UUID] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
     color: Optional[str] = None
 
-class ConstraintTypeCreate(ConstraintTypeBase):
-    pass
 
-class ConstraintType(ConstraintTypeBase):
-    id: int
+class ConstraintTypeResponse(ConstraintType):
     model_config = ConfigDict(from_attributes=True)
 
-class ConstraintBase(BaseModel):
-    account_id: UUID
-    row_date: date
-    constraint_type_id: int
-    resident_id: UUID
-
-class ConstraintCreate(ConstraintBase):
-    pass
-
-class Constraint(ConstraintBase):
     id: int
+    account_id: UUID
+    created_at: datetime
+
+
+# ==========================================
+# CONSTRAINT SCHEMAS
+# ==========================================
+
+class Constraint(SnakeCaseModel):
+    constraint_date: date
+    constraint_type_id: int
+    staff_member_id: UUID
+
+
+class ConstraintCreate(Constraint):
+    unit_id: UUID
+
+
+class ConstraintUpdate(SnakeCaseModel):
+    constraint_date: Optional[date] = None
+    constraint_type_id: Optional[int] = None
+    staff_member_id: Optional[UUID] = None
+
+
+class ConstraintResponse(Constraint):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    unit_id: UUID
     created_at: datetime
     updated_at: datetime
-    model_config = ConfigDict(from_attributes=True)
 
-class ScheduleResidentBase(BaseModel):
-    account_id: UUID
-    row_date: date
-    resident_id: UUID
+
+# ==========================================
+# SCHEDULE STAFF MEMBER SCHEMAS
+# ==========================================
+
+class ScheduleStaffMember(SnakeCaseModel):
+    schedule_date: date
+    staff_member_id: UUID
     station_id: int
     is_stand_by: bool = False
-    is_draft: bool = True
+    created_at: Optional[datetime] = None
 
-class ScheduleResidentCreate(ScheduleResidentBase):
-    pass
 
-class ScheduleResident(ScheduleResidentBase):
-    id: int
-    created_at: datetime
-    updated_at: datetime
+class ScheduleStaffMemberCreate(ScheduleStaffMember):
+    unit_id: UUID
+
+
+class ScheduleStaffMemberUpdate(SnakeCaseModel):
+    schedule_date: Optional[date] = None
+    staff_member_id: Optional[UUID] = None
+    station_id: Optional[int] = None
+    is_stand_by: Optional[bool] = None
+
+
+class ScheduleStaffMemberResponse(ScheduleStaffMember):
     model_config = ConfigDict(from_attributes=True)
 
-class ScheduleSeniorBase(BaseModel):
-    account_id: UUID
-    row_date: date
+    id: int
+    unit_id: UUID
+    created_at: datetime
+
+
+# ==========================================
+# SCHEDULE SENIOR SCHEMAS
+# ==========================================
+
+class ScheduleSenior(SnakeCaseModel):
+    schedule_date: date
     senior_id: int
-    is_draft: bool = True
+    created_at: Optional[datetime] = None
 
-class ScheduleSeniorCreate(ScheduleSeniorBase):
-    pass
 
-class ScheduleSenior(ScheduleSeniorBase):
-    id: int
-    created_at: datetime
-    updated_at: datetime
+class ScheduleSeniorCreate(ScheduleSenior):
+    unit_id: UUID
+
+
+class ScheduleSeniorUpdate(SnakeCaseModel):
+    schedule_date: Optional[date] = None
+    senior_id: Optional[int] = None
+
+class ScheduleSeniorResponse(ScheduleSenior):
     model_config = ConfigDict(from_attributes=True)
 
-class ScheduleVersionBase(BaseModel):
-    account_id: UUID
+    id: int
+    unit_id: UUID
+    created_at: datetime
+
+
+# ==========================================
+# SCHEDULE VERSION SCHEMAS
+# ==========================================
+
+class ScheduleVersion(SnakeCaseModel):
     is_published: bool = False
-    schedule: dict = {}
+    schedule: Dict[str, Any] = {}
+    update_admin_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
 
-class ScheduleVersionCreate(ScheduleVersionBase):
-    pass
 
-class ScheduleVersion(ScheduleVersionBase):
+class ScheduleVersionCreate(ScheduleVersion):
+    unit_id: UUID
+
+
+class ScheduleVersionUpdate(SnakeCaseModel):
+    is_published: Optional[bool] = None
+    schedule: Optional[Dict[str, Any]] = None
+    update_admin_id: Optional[UUID] = None
+
+
+class ScheduleVersionResponse(ScheduleVersion):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
+    unit_id: UUID
+    update_admin_id: Optional[UUID] = None
     created_at: datetime
-    update_admin: str
+
+
+# ==========================================
+# USER SCHEMAS
+# ==========================================
+
+class User(SnakeCaseModel):
+    id: Optional[UUID] = None
+    division_id: Optional[UUID] = None
+    unit_id: Optional[UUID] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    email: EmailStr
+    staff_role: Optional[StaffRole] = None
+    role: UserRole = UserRole.user
+    is_active: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class UserCreate(User):
+    division_id: Optional[UUID] = None
+    unit_id: Optional[UUID] = None
+
+
+class UserUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    email: Optional[EmailStr] = None
+    division_id: Optional[UUID] = None
+    unit_id: Optional[UUID] = None
+    staff_role: Optional[StaffRole] = None
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
+
+
+class UserResponse(User):
     model_config = ConfigDict(from_attributes=True)
+    hospital_name: Optional[str] = None
+    division_name: Optional[str] = None
+    unit_name: Optional[str] = None
 
-class AccountAdmin(BaseModel):
-    account_id: UUID
-    email: str
-    role: AdminRole = AdminRole.admin
-
-class AccountAdminCreate(AccountAdmin):
-    pass
-
-class AccountAdminResponse(AccountAdmin):
-    id: UUID
-    created_at: datetime
-    updated_at: datetime
-    model_config = ConfigDict(from_attributes=True)

@@ -1,20 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
-from schemas.schemas import Constraint, ConstraintCreate, ConstraintType, ConstraintTypeCreate
-from services.constraint_service import ConstraintService
-from services.constraint_type_service import ConstraintTypeService
-from dependencies import get_constraint_service, get_constraint_type_service
+from app.schemas.schemas import Constraint, ConstraintCreate, ConstraintType, ConstraintTypeCreate
+from app.services.constraint_service import ConstraintService
+from app.services.constraint_type_service import ConstraintTypeService
+from app.dependencies import get_constraint_service, get_constraint_type_service
 
 router = APIRouter(prefix="/constraints", tags=["constraints"])
 
 
 
 # Constraint CRUD
-@router.get("/", response_model=list[Constraint])
+@router.get("", response_model=list[Constraint])
 def get_constraints(account_id: UUID, service: ConstraintService = Depends(get_constraint_service)):
     return service.get_all_constraints(account_id)
 
-@router.post("/", response_model=Constraint)
+@router.post("", response_model=Constraint)
 def create_constraint(data: ConstraintCreate, service: ConstraintService = Depends(get_constraint_service)):
     return service.create_constraint(data)
 

@@ -1,4 +1,4 @@
-from schemas.schedule_schema import ScheduleCreate
+from app.schemas.schedule_schema import ScheduleCreate
 
 class ScheduleService:
     def process_schedule(self, schedule_data: ScheduleCreate):

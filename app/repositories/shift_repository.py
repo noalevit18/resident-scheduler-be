@@ -1,14 +1,14 @@
 from sqlalchemy.orm import Session
-from models.models import Shift
-from schemas.schemas import ShiftCreate
+from app.models.models import Shift
+from app.schemas.schemas import ShiftCreate
 from uuid import UUID
 
 class ShiftRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all(self, account_id: UUID):
-        return self.db.query(Shift).filter(Shift.account_id == account_id).all()
+    def get_all(self, unit_id: UUID):
+        return self.db.query(Shift).filter(Shift.unit_id == unit_id).all()
 
     def create(self, data: ShiftCreate):
         db_obj = Shift(**data.model_dump())
@@ -17,8 +17,8 @@ class ShiftRepository:
         self.db.refresh(db_obj)
         return db_obj
 
-    def delete(self, shift_id: int, account_id: UUID):
-        obj = self.db.query(Shift).filter(Shift.id == shift_id, Shift.account_id == account_id).first()
+    def delete(self, shift_id: int, unit_id: UUID):
+        obj = self.db.query(Shift).filter(Shift.id == shift_id, Shift.unit_id == unit_id).first()
         if obj:
             self.db.delete(obj)
             self.db.commit()
