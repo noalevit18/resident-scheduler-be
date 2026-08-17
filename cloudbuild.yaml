@@ -4,14 +4,14 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'me-west1-docker.pkg.dev/$PROJECT_ID/app-repo/resident-scheduler-be:$SHORT_SHA'
+      - 'me-west1-docker.pkg.dev/$PROJECT_ID/resident-scheduler-be:$SHORT_SHA'
       - '.'
 
   # Step 2: Push the container image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'me-west1-docker.pkg.dev/$PROJECT_ID/app-repo/resident-scheduler-be:$SHORT_SHA'
+      - 'me-west1-docker.pkg.dev/$PROJECT_ID/resident-scheduler-be:$SHORT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
