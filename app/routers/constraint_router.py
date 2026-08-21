@@ -4,6 +4,7 @@ from app.schemas.schemas import Constraint, ConstraintCreate, ConstraintType, Co
 from app.services.constraint_service import ConstraintService
 from app.services.constraint_type_service import ConstraintTypeService
 from app.dependencies import get_constraint_service, get_constraint_type_service
+from app.context import bind_current_user
 
 router = APIRouter(prefix="/constraints", tags=["constraints"])
 
@@ -28,7 +29,7 @@ def create_type(data: ConstraintTypeCreate, service: ConstraintTypeService = Dep
     return service.create(data)
 
 @router.delete("/types/{c_id}")
-def delete_type(c_id: int, account_id: UUID, service: ConstraintTypeService = Depends(get_constraint_type_service)):
+def delete_type(c_id: int, account_id: UUID, service: ConstraintTypeService = Depends(get_constraint_type_service), _: dict = Depends(bind_current_user)):
     try:
         service.delete(c_id, account_id)
         return {"message": "Constraint type deleted successfully"}

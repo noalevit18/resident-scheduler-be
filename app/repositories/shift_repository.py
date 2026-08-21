@@ -14,7 +14,6 @@ class ShiftRepository:
         db_obj = Shift(**data.model_dump())
         self.db.add(db_obj)
         self.db.commit()
-        self.db.refresh(db_obj)
         return db_obj
 
     def delete(self, shift_id: int, unit_id: UUID):

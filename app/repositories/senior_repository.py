@@ -14,14 +14,14 @@ class SeniorRepository:
         db_obj = Senior(**data.model_dump())
         self.db.add(db_obj)
         self.db.commit()
-        self.db.refresh(db_obj)
         return db_obj
 
     def delete(self, senior_id: int, unit_id: UUID):
         obj = self.db.query(Senior).filter(Senior.id == senior_id, Senior.unit_id == unit_id).first()
-        if obj:
-            self.db.delete(obj)
-            self.db.commit()
-            return True
-        return False
+        if not obj:
+            return None
+        name = obj.name
+        self.db.delete(obj)
+        self.db.commit()
+        return name
 

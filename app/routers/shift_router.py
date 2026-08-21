@@ -4,6 +4,7 @@ from app.schemas.schemas import Shift, ShiftCreate, ShiftStation, ShiftStationCr
 from app.services.shift_service import ShiftService
 from app.services.shift_station_service import ShiftStationService
 from app.dependencies import get_shift_service, get_shift_station_service
+from app.context import bind_current_user
 
 router = APIRouter(prefix="/shifts", tags=["shifts"])
 
@@ -26,7 +27,7 @@ def create_station(data: ShiftStationCreate, service: ShiftStationService = Depe
     return service.create(data)
 
 @router.delete("/stations/{ss_id}")
-def delete_station(ss_id: int, account_id: UUID, service: ShiftStationService = Depends(get_shift_station_service)):
+def delete_station(ss_id: int, account_id: UUID, service: ShiftStationService = Depends(get_shift_station_service), _: dict = Depends(bind_current_user)):
     try:
         service.delete(ss_id, account_id)
         return {"message": "Shift station deleted successfully"}

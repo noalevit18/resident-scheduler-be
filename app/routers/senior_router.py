@@ -3,6 +3,7 @@ from uuid import UUID
 from app.schemas.schemas import Senior, SeniorCreate
 from app.services.senior_service import SeniorService
 from app.dependencies import get_senior_service
+from app.context import bind_current_user
 
 
 router = APIRouter(prefix="/seniors", tags=["seniors"])
@@ -17,7 +18,7 @@ def create_senior(data: SeniorCreate, service: SeniorService = Depends(get_senio
     return service.create_senior(data)
 
 @router.delete("/{senior_id}")
-def delete_senior(senior_id: int, account_id: UUID, service: SeniorService = Depends(get_senior_service)):
+def delete_senior(senior_id: int, account_id: UUID, service: SeniorService = Depends(get_senior_service), _: dict = Depends(bind_current_user)):
     try:
         service.delete_senior(senior_id, account_id)
         return {"message": "Senior deleted successfully"}
