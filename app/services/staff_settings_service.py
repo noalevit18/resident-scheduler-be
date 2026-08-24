@@ -61,7 +61,7 @@ class StaffSettingsService:
     def get_all_settings(self, division_id: UUID, unit_id: UUID):
         certifications_response = self.certification_service.get_all_certifications(unit_id)
         rotations_response = self.rotation_service.get_all_rotations(division_id)
-        return StaffSettingsResponse(certification=certifications_response, rotations=rotations_response)
+        return StaffSettingsResponse(certifications=certifications_response, rotations=rotations_response)
 
 
 

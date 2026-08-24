@@ -184,7 +184,7 @@ class StaffCertificationResponse(StaffCertification):
 
 
 class StaffSettingsResponse(SnakeCaseModel):
-    certification: list[StaffCertificationResponse]
+    certifications: list[StaffCertificationResponse]
     rotations: list[StaffRotationResponse]
 
 # ==========================================
