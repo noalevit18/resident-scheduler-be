@@ -16,19 +16,20 @@ class UserRepository:
         return [UserResponse.model_validate(u) for u in users]
 
     def create(self, data: UserCreate):
-        db_obj = UserModel(**data.model_dump())
+        payload = data.model_dump(exclude={"id", "created_at", "updated_at"})
+        db_obj = UserModel(**payload)
         self.db.add(db_obj)
         self.db.commit()
-        self.db.refresh(db_obj)
         return UserResponse.model_validate(db_obj)
 
     def delete(self, user_id: UUID, division_id: UUID):
         obj = self.db.query(UserModel).filter(UserModel.id == user_id, UserModel.division_id == division_id).first()
-        if obj:
-            self.db.delete(obj)
-            self.db.commit()
-            return True
-        return False
+        if not obj:
+            return None
+        name = obj.name
+        self.db.delete(obj)
+        self.db.commit()
+        return name
 
     def update_user(self, user_id: UUID, division_id: UUID, user_data: dict):
         obj = self.db.query(UserModel).filter(UserModel.id == user_id, UserModel.division_id == division_id).first()
@@ -37,7 +38,6 @@ class UserRepository:
                 if hasattr(obj, key):
                     setattr(obj, key, value)
             self.db.commit()
-            self.db.refresh(obj)
             return UserResponse.model_validate(obj)
         return None
 

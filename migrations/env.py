@@ -81,7 +81,11 @@ def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
 
     # Create the engine directly using the URL
-    connectable = create_engine(database_url)
+    # prepare_threshold=None disables server-side prepared statements, which
+    # Supabase's transaction-mode pooler (pgbouncer/Supavisor) does not support
+    # and which otherwise causes "DuplicatePreparedStatement" errors during
+    # autogenerate's heavy schema introspection. Mirrors app/database.py.
+    connectable = create_engine(database_url, connect_args={"prepare_threshold": None})
     with connectable.connect() as connection:
         context.configure(
             connection=connection,

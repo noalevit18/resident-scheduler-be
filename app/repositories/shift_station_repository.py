@@ -14,13 +14,13 @@ class ShiftStationRepository:
         db_obj = ShiftStation(**data.model_dump())
         self.db.add(db_obj)
         self.db.commit()
-        self.db.refresh(db_obj)
         return db_obj
 
     def delete(self, ss_id: int, division_id: UUID):
         obj = self.db.query(ShiftStation).filter(ShiftStation.id == ss_id, ShiftStation.division_id == division_id).first()
-        if obj:
-            self.db.delete(obj)
-            self.db.commit()
-            return True
-        return False
+        if not obj:
+            return None
+        name = obj.name
+        self.db.delete(obj)
+        self.db.commit()
+        return name

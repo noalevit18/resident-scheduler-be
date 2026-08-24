@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -11,10 +12,14 @@ load_dotenv()
 # --- 1. INITIALIZATION LOGS ---
 print(">>> [AUTH INIT] Checking Firebase initialization...", flush=True)
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 google_creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 firebase_project_id = os.getenv("FIREBASE_PROJECT_ID")
 
-print(f">>> [AUTH INIT] GOOGLE_APPLICATION_CREDENTIALS = {google_creds!r}", flush=True)
+if google_creds and not os.path.isabs(google_creds):
+    google_creds = str(PROJECT_ROOT / google_creds)
+
 print(f">>> [AUTH INIT] FIREBASE_PROJECT_ID = {firebase_project_id!r}", flush=True)
 
 try:
@@ -26,7 +31,6 @@ except ValueError:
     init_options = {"projectId": firebase_project_id} if firebase_project_id else {}
     
     if google_creds and os.path.exists(google_creds):
-        print(f">>> [AUTH INIT] Loading service account file from: {google_creds}", flush=True)
         cred = credentials.Certificate(google_creds)
         firebase_admin.initialize_app(cred, options=init_options)
     else:

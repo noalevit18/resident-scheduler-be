@@ -1,5 +1,5 @@
-from sqlalchemy.orm import Session
-from app.models.models import Unit
+from sqlalchemy.orm import Session, joinedload
+from app.models.models import Unit, Division
 from uuid import UUID
 
 class UnitRepository:
@@ -7,4 +7,9 @@ class UnitRepository:
         self.db = db
 
     def get_by_id(self, unit_id: UUID):
-        return self.db.query(Unit).filter(Unit.id == unit_id).first()
+        return (
+            self.db.query(Unit)
+            .options(joinedload(Unit.division).joinedload(Division.account))
+            .filter(Unit.id == unit_id)
+            .first()
+        )
