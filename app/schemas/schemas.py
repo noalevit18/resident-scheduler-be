@@ -161,21 +161,21 @@ class StaffRotationResponse(StaffRotation):
 # CERTIFICATION SCHEMAS
 # ==========================================
 
-class Certification(SnakeCaseModel):
+class StaffCertification(SnakeCaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     color: Optional[str] = None
 
 
-class CertificationCreate(Certification):
+class StaffCertificationCreate(StaffCertification):
     unit_id: UUID
 
 
-class CertificationUpdate(SnakeCaseModel):
+class StaffCertificationUpdate(SnakeCaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     color: Optional[str] = None
 
 
-class CertificationResponse(Certification):
+class StaffCertificationResponse(StaffCertification):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -183,6 +183,9 @@ class CertificationResponse(Certification):
     created_at: datetime
 
 
+class StaffSettingsResponse(SnakeCaseModel):
+    certifications: list[StaffCertificationResponse]
+    rotations: list[StaffRotationResponse]
 
 # ==========================================
 # STAFF SCHEMAS
@@ -191,9 +194,11 @@ class CertificationResponse(Certification):
 
 class Staff(SnakeCaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    month: Optional[date] = None
-    rotation: Optional[int] = None
-    certifications_ids: Optional[List[int]] = []
+    user_id: Optional[UUID] = None
+    active_since: Optional[str] = None
+    archived_since: Optional[str] = None
+    month_rotation: Optional[Dict[str, List[int]]] = {}
+    month_certifications: Optional[Dict[str, List[int]]] = {}
 
 
 class StaffCreate(Staff):
@@ -202,9 +207,11 @@ class StaffCreate(Staff):
 
 class StaffUpdate(SnakeCaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
-    month: Optional[date] = None
-    rotation: Optional[int] = None
-    certifications_ids: Optional[List[int]] = None
+    user_id: Optional[UUID] = None
+    active_since: Optional[str] = None
+    archived_since: Optional[str] = None
+    month_rotation: Optional[Dict[str, List[int]]] = None
+    month_certifications: Optional[Dict[str, List[int]]] = None
 
 
 class StaffResponse(Staff):
@@ -212,8 +219,8 @@ class StaffResponse(Staff):
 
     id: UUID
     unit_id: UUID
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 # ==========================================

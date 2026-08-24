@@ -14,5 +14,4 @@ class ConstraintRepository:
         db_obj = Constraint(**data.model_dump())
         self.db.add(db_obj)
         self.db.commit()
-        self.db.refresh(db_obj)
         return db_obj

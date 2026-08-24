@@ -4,6 +4,7 @@ from app.schemas.schemas import User, UserResponse, UserUpdate
 from app.services.user_service import UserService
 from app.dependencies import get_user_service
 from app.auth import get_current_user
+from app.context import bind_current_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -36,7 +37,7 @@ def create_user(data: User, service: UserService = Depends(get_user_service)):
     return service.create_user(data)
 
 @router.delete("/{user_id}")
-def delete_user(user_id: UUID, division_id: UUID, service: UserService = Depends(get_user_service)):
+def delete_user(user_id: UUID, division_id: UUID, service: UserService = Depends(get_user_service), _: dict = Depends(bind_current_user)):
     try:
         service.delete_user(user_id, division_id)
         return {"message": "User deleted successfully"}

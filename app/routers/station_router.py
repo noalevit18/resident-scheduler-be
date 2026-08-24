@@ -3,6 +3,7 @@ from uuid import UUID
 from app.schemas.schemas import Station, StationCreate
 from app.services.station_service import StationService
 from app.dependencies import get_station_service
+from app.context import bind_current_user
 
 router = APIRouter(prefix="/stations", tags=["stations"])
 
@@ -15,7 +16,7 @@ def create_station(data: StationCreate, service: StationService = Depends(get_st
     return service.create_station(data)
 
 @router.delete("/{station_id}")
-def delete_station(station_id: int, account_id: UUID, service: StationService = Depends(get_station_service)):
+def delete_station(station_id: int, account_id: UUID, service: StationService = Depends(get_station_service), _: dict = Depends(bind_current_user)):
     try:
         service.delete_station(station_id, account_id)
         return {"message": "Station deleted successfully"}
