@@ -31,7 +31,6 @@ arrays are always sorted ascending.
 """
 
 import argparse
-import os
 import sys
 import uuid
 from datetime import datetime, date
@@ -63,24 +62,10 @@ FALLBACK_MONTHS = ["2026-07", "2026-08", "2026-09"]
 
 
 def init_firebase() -> firestore.Client:
-    firebase_project_id = os.getenv("FIREBASE_PROJECT_ID")
-    init_options = {"projectId": firebase_project_id} if firebase_project_id else {}
     try:
-        app = firebase_admin.get_app()
+        firebase_admin.get_app()
     except ValueError:
-        app = firebase_admin.initialize_app(credentials.ApplicationDefault(), options=init_options)
-
-    # Temporary diagnostics for the "(default)" database InvalidArgument —
-    # confirms which google-cloud-firestore/grpcio build is actually
-    # running and which project firebase_admin resolved, straight from the
-    # job's own logs. Remove once the root cause is confirmed.
-    import google.cloud.firestore as _gcf
-    import grpc as _grpc
-    print(f"[diag] google-cloud-firestore version={_gcf.__version__}", flush=True)
-    print(f"[diag] grpcio version={_grpc.__version__}", flush=True)
-    print(f"[diag] resolved app.project_id={app.project_id!r}", flush=True)
-    print(f"[diag] FIREBASE_PROJECT_ID env={firebase_project_id!r}", flush=True)
-
+        firebase_admin.initialize_app(credentials.ApplicationDefault())
     return firestore.client()
 
 
