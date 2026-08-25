@@ -64,12 +64,12 @@ FALLBACK_MONTHS = ["2026-07", "2026-08", "2026-09"]
 
 def init_firebase() -> firestore.Client:
     firebase_project_id = os.getenv("FIREBASE_PROJECT_ID")
-    init_options = {"projectId": firebase_project_id} if firebase_project_id else {}
+    init_options = {"projectId": firebase_project_id} if firebase_project_id else None
     try:
         firebase_admin.get_app()
     except ValueError:
         firebase_admin.initialize_app(credentials.ApplicationDefault(), options=init_options)
-    return firestore.client()
+    return firestore.client(database_id=os.getenv("FIRESTORE_DATABASE_ID"))
 
 
 def old_id_to_uuid(old_id: str) -> UUID:
