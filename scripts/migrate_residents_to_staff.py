@@ -31,6 +31,7 @@ arrays are always sorted ascending.
 """
 
 import argparse
+import os
 import sys
 import uuid
 from datetime import datetime, date
@@ -62,10 +63,12 @@ FALLBACK_MONTHS = ["2026-07", "2026-08", "2026-09"]
 
 
 def init_firebase() -> firestore.Client:
+    firebase_project_id = os.getenv("FIREBASE_PROJECT_ID")
+    init_options = {"projectId": firebase_project_id} if firebase_project_id else {}
     try:
         firebase_admin.get_app()
     except ValueError:
-        firebase_admin.initialize_app(credentials.ApplicationDefault())
+        firebase_admin.initialize_app(credentials.ApplicationDefault(), options=init_options)
     return firestore.client()
 
 
