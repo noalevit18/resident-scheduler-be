@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.schemas.schemas import UserResponse, UserCreate
 from app.models.models import User as UserModel
@@ -8,7 +9,7 @@ class UserRepository:
         self.db = db
 
     def get_by_email(self, email: str):
-        user = self.db.query(UserModel).filter(UserModel.email == email).first()
+        user = self.db.query(UserModel).filter(func.lower(UserModel.email) == email.lower()).first()
         return UserResponse.model_validate(user) if user else None
 
     def get_all(self, division_id: UUID):
