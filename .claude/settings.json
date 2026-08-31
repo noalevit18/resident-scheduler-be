@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile app/models/models.py app/schemas/schemas.py migrations/versions/d4a7e5f91b2c_add_active_to_units.py)",
+      "Bash(python -m py_compile app/models/models.py app/schemas/schemas.py app/services/metadata_service.py migrations/versions/d4a7e5f91b2c_add_active_to_units.py)"
+    ]
+  }
+}
