@@ -8,5 +8,5 @@ class MetadataService:
         units = self.repository.get_units(division_id=division_id)
 
         return {
-            "units": {str(u.id): u.name for u in units},
+            "units": {str(u.id): {"name": u.name, "active": u.active} for u in units},
         }
