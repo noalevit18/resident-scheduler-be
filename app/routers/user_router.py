@@ -15,7 +15,7 @@ def login_user(
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        return service.login(current_user["email"])
+        return service.login(current_user.get("sub"), current_user["email"])
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
