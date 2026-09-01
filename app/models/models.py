@@ -230,6 +230,7 @@ class User(Base):
         Index("idx_users_email", "email"),
         Index("idx_users_division_id", "division_id"),
         Index("idx_users_unit_id", "unit_id"),
+        Index("idx_users_firebase_uid", "firebase_uid", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -237,6 +238,7 @@ class User(Base):
     unit_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     email: Mapped[str] = mapped_column(Text, nullable=False)
+    firebase_uid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     staff_role: Mapped[StaffRole] = mapped_column(SQLEnum(StaffRole, name="staffrole"), nullable=False)
     role: Mapped[UserRole] = mapped_column(SQLEnum(UserRole, name="userrole"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

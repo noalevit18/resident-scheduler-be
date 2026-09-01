@@ -4,7 +4,20 @@
       "Bash(python -m py_compile app/models/models.py app/schemas/schemas.py migrations/versions/d4a7e5f91b2c_add_active_to_units.py)",
       "Bash(python -m py_compile app/models/models.py app/schemas/schemas.py app/services/metadata_service.py migrations/versions/d4a7e5f91b2c_add_active_to_units.py)",
       "Bash(alembic -c app/alembic.ini heads)",
-      "Bash(alembic -c app/alembic.ini current)"
+      "Bash(alembic -c app/alembic.ini current)",
+      "Bash(python3 -c \"import uuid; print\\(uuid.uuid4\\(\\).hex[:12]\\)\")",
+      "Bash(git status *)",
+      "Bash(ls -la /Users/reuvenlevitsky/Documents/Noa/resident-scheduler/ 2>/dev/null)",
+      "Read(//Users/reuvenlevitsky/Documents/Noa/resident-scheduler/**)",
+      "Bash(cd /Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe && grep -rln -i -E \"signInWithEmailLink|isSignInWithEmailLink|sendSignInLinkToEmail|emailForSignIn\" --include=*.ts --include=*.tsx --include=*.js --include=*.jsx . 2>/dev/null | grep -v node_modules)",
+      "Read(//Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/**)",
+      "Bash(cd /Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe && grep -rlnE \"signInWithEmailLink|isSignInWithEmailLink|sendSignInLinkToEmail|emailForSignIn\" -- . 2>/dev/null | grep -v node_modules | grep -v \"\\\\.git/\")",
+      "Bash(grep -n \"signInWithEmailLink\\\\|isSignInWithEmailLink\\\\|sendSignInLinkToEmail\\\\|emailForSignIn\\\\|localStorage\\\\|prompt\\(\" /Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src/lib/auth-context.tsx)",
+      "Read(//Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src/lib/**)",
+      "Read(//Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src/**)",
+      "Bash(cd /Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src && grep -rln \"isEmailLinkSignIn\\\\|getStoredEmailForSignIn\\\\|completeEmailLinkSignIn\" . 2>/dev/null)",
+      "Read(//Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src/components/pages/**)",
+      "Bash(grep -n \"needsConfirmation\\\\|isEmailLinkSignIn\\\\|getStoredEmailForSignIn\\\\|completeEmailLinkSignIn\\\\|useEffect\" /Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src/components/pages/HomePage.tsx)"
     ]
   }
 }
