@@ -51,6 +51,7 @@ class StaffRole(str, enum.Enum):
     RESIDENT = "resident"
     INTERN = "intern"
     NURSE = "nurse"
+    CLERK = "clerk"
 
 
 # ==========================================
