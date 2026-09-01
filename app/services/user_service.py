@@ -1,5 +1,7 @@
 import logging
 
+from sqlalchemy.exc import IntegrityError
+
 from app.repositories.user_repository import UserRepository
 from app.services.unit_service import UnitService
 from app.services.division_service import DivisionService
@@ -27,13 +29,34 @@ class UserService:
     def update_user(self, user_id: UUID, division_id: UUID, user_data: dict):
         return self.repository.update_user(user_id, division_id, user_data)
 
-    def login(self, email: str):
-        user = self.repository.get_by_email(email)
+    def login(self, firebase_uid: str | None, email: str):
+        user = None
+
+        if firebase_uid:
+            user = self.repository.get_by_firebase_uid(firebase_uid)
+
         if not user:
-            raise ValueError("User not found")
+            user = self.repository.get_by_email(email)
+            if not user:
+                raise ValueError("User not found")
+            if firebase_uid and user.firebase_uid != firebase_uid:
+                try:
+                    updated = self.repository.set_firebase_uid(user.id, firebase_uid)
+                    if updated:
+                        user = updated
+                        logger.info(
+                            "Backfilled firebase_uid for user id=%s email=%s",
+                            user.id, email,
+                        )
+                except IntegrityError:
+                    self.repository.db.rollback()
+                    user = self.repository.get_by_firebase_uid(firebase_uid)
+                    if not user:
+                        raise ValueError("User not found")
+
         if not user.is_active:
             raise ValueError("User is inactive")
-        
+
         user_response = UserResponse.model_validate(user)
         
         if user.unit_id and self.unit_service:

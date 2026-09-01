@@ -505,6 +505,7 @@ class User(SnakeCaseModel):
     unit_id: Optional[UUID] = None
     name: str = Field(..., min_length=1, max_length=100)
     email: EmailStr
+    firebase_uid: Optional[str] = None
     staff_role: Optional[StaffRole] = None
     role: UserRole = UserRole.user
     is_active: bool = True
