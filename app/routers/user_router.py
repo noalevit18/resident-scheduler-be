@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
 from app.schemas.schemas import User, UserResponse, UserUpdate
 from app.services.user_service import UserService
-from app.dependencies import get_user_service
+from app.services.constraints_submission_service import ConstraintsSubmissionService
+from app.dependencies import get_user_service, get_constraints_submission_service
 from app.auth import get_current_user
 from app.context import bind_current_user
 
@@ -12,12 +13,20 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.post("/login", response_model=UserResponse)
 def login_user(
     service: UserService = Depends(get_user_service),
+    submission_service: ConstraintsSubmissionService = Depends(get_constraints_submission_service),
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        return service.login(current_user.get("sub"), current_user["email"])
+        user_response = service.login(current_user.get("sub"), current_user["email"])
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+    if user_response.unit_id:
+        user_response.constraints_submitted_this_month = submission_service.has_submitted_this_month(
+            user_response.unit_id, current_user
+        )
+
+    return user_response
 
 @router.patch("/{user_id}")
 def update_user(user_id: UUID, division_id: UUID, update_data: UserUpdate, service: UserService = Depends(get_user_service)):

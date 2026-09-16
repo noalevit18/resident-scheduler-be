@@ -11,14 +11,16 @@ from app.logging_config import configure_logging
 
 configure_logging()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from app.database import engine
 from app.routers import (
     staff_router, staff_settings_router, station_router, senior_router, shift_router,
     constraint_router, schedule_router, user_router, metadata_router
 )
+from app.services.authorization_service import AuthorizationError
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,11 @@ app.include_router(shift_router.router, prefix="/api")
 app.include_router(constraint_router.router, prefix="/api")
 app.include_router(schedule_router.router, prefix="/api")
 app.include_router(metadata_router.router, prefix="/api")
+
+@app.exception_handler(AuthorizationError)
+def handle_authorization_error(request: Request, exc: AuthorizationError):
+    return JSONResponse(status_code=403, content={"error": "forbidden", "message": exc.message})
+
 
 @app.get("/")
 def read_root():

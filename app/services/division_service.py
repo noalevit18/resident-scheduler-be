@@ -16,4 +16,5 @@ class DivisionService:
             "division_id": division.id,
             "division_name": division.name,
             "hospital_name": hospital_name,
+            "account_id": division.account_id,
         }

@@ -13,11 +13,13 @@ class UnitService:
         unit_name = unit.name
         division_name = unit.division.name if unit.division else None
         hospital_name = unit.division.account.hospital_name if unit.division and unit.division.account else None
-        
+        account_id = unit.division.account_id if unit.division else None
+
         return {
             "unit_id": unit.id,
             "unit_name": unit_name,
             "division_id": unit.division_id,
             "division_name": division_name,
-            "hospital_name": hospital_name
+            "hospital_name": hospital_name,
+            "account_id": account_id
         }
