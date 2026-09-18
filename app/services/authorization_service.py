@@ -50,6 +50,12 @@ class AuthorizationService:
     def is_admin(self, user: UserResponse) -> bool:
         return user.role in ADMIN_ROLES
 
+    def get_account_id_or_raise(self, user: UserResponse) -> UUID:
+        account_id = self.user_account_id(user)
+        if not account_id:
+            raise AuthorizationError("Could not determine your account")
+        return account_id
+
     def account_id_for_unit(self, unit_id: UUID) -> Optional[UUID]:
         unit = self.unit_service.get_unit_details(unit_id)
         return unit["account_id"] if unit else None

@@ -43,6 +43,12 @@ class StaffRole(str, enum.Enum):
     CLERK = "clerk"
 
 
+class SpecialDateType(str, enum.Enum):
+    PARTIAL_DAY = "partial_day"
+    SABBATICAL = "sabbatical"
+    REGULAR = "regular"
+
+
 class Account(Base):
     __tablename__ = "accounts"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -181,6 +187,19 @@ class ConstraintType(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class SpecialDate(Base):
+    __tablename__ = "special_dates"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[SpecialDateType] = mapped_column(SQLEnum(SpecialDateType, name="special_date_type"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
 
 
 class Constraint(Base):
