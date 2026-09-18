@@ -17,6 +17,7 @@ from app.repositories.unit_repository import UnitRepository
 from app.repositories.division_repository import DivisionRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.staff_settings_repository import StaffCertificationRepository, StaffRotationRepository
+from app.repositories.special_date_repository import SpecialDateRepository
 
 # Services
 from app.services.constraint_service import ConstraintService
@@ -35,6 +36,7 @@ from app.services.schedule_service import ScheduleService
 from app.services.user_service import UserService
 from app.services.metadata_service import MetadataService
 from app.services.staff_settings_service import StaffCertificationService, StaffRotationService, StaffSettingsService
+from app.services.special_date_service import SpecialDateService
 
 # --- Repository Factories ---
 def get_constraint_repository(db: Session = Depends(get_db)): return ConstraintRepository(db)
@@ -52,6 +54,7 @@ def get_user_repository(db: Session = Depends(get_db)): return UserRepository(db
 def get_metadata_repository(db: Session = Depends(get_db)): return MetadataRepository(db)
 def get_certification_repository(db: Session = Depends(get_db)): return StaffCertificationRepository(db)
 def get_staff_rotation_repository(db: Session = Depends(get_db)): return StaffRotationRepository(db)
+def get_special_date_repository(db: Session = Depends(get_db)): return SpecialDateRepository(db)
 
 # --- Service Factories     ---
 def get_constraint_type_service(repo: ConstraintTypeRepository = Depends(get_constraint_type_repository)): return ConstraintTypeService(repo)
@@ -98,3 +101,4 @@ def get_certification_service(repo: StaffCertificationRepository = Depends(get_c
 def get_staff_rotation_service(repo: StaffRotationRepository = Depends(get_staff_rotation_repository)): return StaffRotationService(repo)
 def get_staff_settings_service(certification_service: StaffCertificationService = Depends(get_certification_service),
                                rotation_service: StaffRotationService = Depends(get_staff_rotation_service)): return StaffSettingsService(certification_service, rotation_service)
+def get_special_date_service(repo: SpecialDateRepository = Depends(get_special_date_repository)): return SpecialDateService(repo)

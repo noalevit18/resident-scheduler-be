@@ -55,6 +55,12 @@ class StaffRole(str, enum.Enum):
     CLERK = "clerk"
 
 
+class SpecialDateType(str, enum.Enum):
+    partial_day = "partial_day"
+    sabbatical = "sabbatical"
+    regular = "regular"
+
+
 # ==========================================
 # ACCOUNT SCHEMAS
 # ==========================================
@@ -389,6 +395,35 @@ class ConstraintTypeResponse(ConstraintType):
     created_at: datetime
     updated_at: datetime
     is_deleted: bool = False
+
+
+# ==========================================
+# SPECIAL DATE (HOLIDAY) SCHEMAS
+# ==========================================
+
+class SpecialDateBase(SnakeCaseModel):
+    date: date
+    label: str = Field(..., min_length=1, max_length=200)
+    type: SpecialDateType
+
+
+class SpecialDateResponse(SpecialDateBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    account_id: UUID
+    created_at: datetime
+    created_by: Optional[UUID] = None
+    updated_at: datetime
+    updated_by: Optional[UUID] = None
+
+
+class SpecialDateBulkEntry(SpecialDateBase):
+    pass
+
+
+class SpecialDatesBulkUpdate(SnakeCaseModel):
+    upserts: List[SpecialDateBulkEntry] = []
+    delete_dates: List[date] = []
 
 
 # ==========================================

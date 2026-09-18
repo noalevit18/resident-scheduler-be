@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from app.database import engine
 from app.routers import (
-    staff_router, staff_settings_router, station_router, senior_router, shift_router,
+    special_dates_router, staff_router, staff_settings_router, station_router, senior_router, shift_router,
     constraint_router, schedule_router, user_router, metadata_router
 )
 from app.services.authorization_service import AuthorizationError
@@ -60,6 +60,7 @@ app.include_router(shift_router.router, prefix="/api")
 app.include_router(constraint_router.router, prefix="/api")
 app.include_router(schedule_router.router, prefix="/api")
 app.include_router(metadata_router.router, prefix="/api")
+app.include_router(special_dates_router.router, prefix="/api")
 
 @app.exception_handler(AuthorizationError)
 def handle_authorization_error(request: Request, exc: AuthorizationError):
