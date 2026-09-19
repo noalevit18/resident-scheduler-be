@@ -5,6 +5,8 @@ from app.database import get_db
 # Repositories
 from app.repositories.constraint_repository import ConstraintRepository
 from app.repositories.constraint_type_repository import ConstraintTypeRepository
+from app.repositories.constraint_submission_metadata_repository import ConstraintSubmissionMetadataRepository
+from app.repositories.constraints_submission_repository import ConstraintsSubmissionRepository
 from app.repositories.metadata_repository import MetadataRepository
 from app.repositories.staff_repository import StaffRepository
 from app.repositories.senior_repository import SeniorRepository
@@ -15,10 +17,14 @@ from app.repositories.unit_repository import UnitRepository
 from app.repositories.division_repository import DivisionRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.staff_settings_repository import StaffCertificationRepository, StaffRotationRepository
+from app.repositories.special_date_repository import SpecialDateRepository
 
 # Services
 from app.services.constraint_service import ConstraintService
 from app.services.constraint_type_service import ConstraintTypeService
+from app.services.constraint_submission_metadata_service import ConstraintSubmissionMetadataService
+from app.services.constraints_submission_service import ConstraintsSubmissionService
+from app.services.authorization_service import AuthorizationService
 from app.services.staff_service import StaffService
 from app.services.senior_service import SeniorService
 from app.services.shift_service import ShiftService
@@ -30,10 +36,13 @@ from app.services.schedule_service import ScheduleService
 from app.services.user_service import UserService
 from app.services.metadata_service import MetadataService
 from app.services.staff_settings_service import StaffCertificationService, StaffRotationService, StaffSettingsService
+from app.services.special_date_service import SpecialDateService
 
 # --- Repository Factories ---
 def get_constraint_repository(db: Session = Depends(get_db)): return ConstraintRepository(db)
 def get_constraint_type_repository(db: Session = Depends(get_db)): return ConstraintTypeRepository(db)
+def get_constraint_submission_metadata_repository(db: Session = Depends(get_db)): return ConstraintSubmissionMetadataRepository(db)
+def get_constraints_submission_repository(db: Session = Depends(get_db)): return ConstraintsSubmissionRepository(db)
 def get_staff_repository(db: Session = Depends(get_db)): return StaffRepository(db)
 def get_senior_repository(db: Session = Depends(get_db)): return SeniorRepository(db)
 def get_shift_repository(db: Session = Depends(get_db)): return ShiftRepository(db)
@@ -45,27 +54,51 @@ def get_user_repository(db: Session = Depends(get_db)): return UserRepository(db
 def get_metadata_repository(db: Session = Depends(get_db)): return MetadataRepository(db)
 def get_certification_repository(db: Session = Depends(get_db)): return StaffCertificationRepository(db)
 def get_staff_rotation_repository(db: Session = Depends(get_db)): return StaffRotationRepository(db)
+def get_special_date_repository(db: Session = Depends(get_db)): return SpecialDateRepository(db)
 
 # --- Service Factories     ---
-def get_constraint_service(repo: ConstraintRepository = Depends(get_constraint_repository)): return ConstraintService(repo)
 def get_constraint_type_service(repo: ConstraintTypeRepository = Depends(get_constraint_type_repository)): return ConstraintTypeService(repo)
-def get_staff_service(repo: StaffRepository = Depends(get_staff_repository)): return StaffService(repo)
-def get_senior_service(repo: SeniorRepository = Depends(get_senior_repository)): return SeniorService(repo)
-def get_shift_service(repo: ShiftRepository = Depends(get_shift_repository)): return ShiftService(repo)
-def get_shift_station_service(repo: ShiftStationRepository = Depends(get_shift_station_repository)): return ShiftStationService(repo)
-def get_station_service(repo: StationRepository = Depends(get_station_repository)): return StationService(repo)
 def get_unit_service(repo: UnitRepository = Depends(get_unit_repository)): return UnitService(repo)
 def get_division_service(repo: DivisionRepository = Depends(get_division_repository)): return DivisionService(repo)
-def get_schedule_service(): return ScheduleService()
 def get_user_service(
     repo: UserRepository = Depends(get_user_repository),
     unit_service: UnitService = Depends(get_unit_service),
     division_service: DivisionService = Depends(get_division_service)
 ):
     return UserService(repo, unit_service, division_service)
+def get_staff_service(
+    repo: StaffRepository = Depends(get_staff_repository),
+    user_service: UserService = Depends(get_user_service),
+): return StaffService(repo, user_service)
+def get_authorization_service(
+    user_service: UserService = Depends(get_user_service),
+    unit_service: UnitService = Depends(get_unit_service),
+    division_service: DivisionService = Depends(get_division_service),
+): return AuthorizationService(user_service, unit_service, division_service)
+def get_constraint_submission_metadata_service(
+    repo: ConstraintSubmissionMetadataRepository = Depends(get_constraint_submission_metadata_repository),
+    user_service: UserService = Depends(get_user_service),
+): return ConstraintSubmissionMetadataService(repo, user_service)
+def get_constraint_service(
+    repo: ConstraintRepository = Depends(get_constraint_repository),
+    submission_repo: ConstraintsSubmissionRepository = Depends(get_constraints_submission_repository),
+    submission_metadata_service: ConstraintSubmissionMetadataService = Depends(get_constraint_submission_metadata_service),
+    constraint_type_service: ConstraintTypeService = Depends(get_constraint_type_service),
+    staff_service: StaffService = Depends(get_staff_service),
+): return ConstraintService(repo, submission_repo, submission_metadata_service, constraint_type_service, staff_service)
+def get_constraints_submission_service(
+    repo: ConstraintsSubmissionRepository = Depends(get_constraints_submission_repository),
+    submission_metadata_service: ConstraintSubmissionMetadataService = Depends(get_constraint_submission_metadata_service),
+    staff_service: StaffService = Depends(get_staff_service),
+): return ConstraintsSubmissionService(repo, submission_metadata_service, staff_service)
+def get_senior_service(repo: SeniorRepository = Depends(get_senior_repository)): return SeniorService(repo)
+def get_shift_service(repo: ShiftRepository = Depends(get_shift_repository)): return ShiftService(repo)
+def get_shift_station_service(repo: ShiftStationRepository = Depends(get_shift_station_repository)): return ShiftStationService(repo)
+def get_station_service(repo: StationRepository = Depends(get_station_repository)): return StationService(repo)
+def get_schedule_service(): return ScheduleService()
 def get_metadata_service(repo: MetadataRepository = Depends(get_metadata_repository)): return MetadataService(repo)
 def get_certification_service(repo: StaffCertificationRepository = Depends(get_certification_repository)): return StaffCertificationService(repo)
 def get_staff_rotation_service(repo: StaffRotationRepository = Depends(get_staff_rotation_repository)): return StaffRotationService(repo)
-def get_staff_settings_service(certification_service: StaffCertificationService = Depends(get_certification_service), 
+def get_staff_settings_service(certification_service: StaffCertificationService = Depends(get_certification_service),
                                rotation_service: StaffRotationService = Depends(get_staff_rotation_service)): return StaffSettingsService(certification_service, rotation_service)
-
+def get_special_date_service(repo: SpecialDateRepository = Depends(get_special_date_repository)): return SpecialDateService(repo)

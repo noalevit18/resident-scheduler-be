@@ -1,5 +1,6 @@
 import enum
 import re
+import datetime as dt
 from datetime import datetime, date
 from typing import Optional, List, Any, Dict
 from uuid import UUID
@@ -52,6 +53,12 @@ class StaffRole(str, enum.Enum):
     INTERN = "intern"
     NURSE = "nurse"
     CLERK = "clerk"
+
+
+class SpecialDateType(str, enum.Enum):
+    partial_day = "partial_day"
+    sabbatical = "sabbatical"
+    regular = "regular"
 
 
 # ==========================================
@@ -354,10 +361,18 @@ class ShiftResponse(Shift):
 # CONSTRAINT TYPE SCHEMAS
 # ==========================================
 
+class ConstraintTypeColor(SnakeCaseModel):
+    bg: str
+    text: str
+    border: str
+    is_custom: Optional[bool] = False
+
+
 class ConstraintType(SnakeCaseModel):
     account_id: UUID
     name: str = Field(..., min_length=1, max_length=100)
-    color: Optional[str] = None
+    color: ConstraintTypeColor
+    is_hard: bool = False
     created_at: Optional[datetime] = None
 
 
@@ -366,9 +381,9 @@ class ConstraintTypeCreate(ConstraintType):
 
 
 class ConstraintTypeUpdate(SnakeCaseModel):
-    account_id: Optional[UUID] = None
     name: Optional[str] = Field(None, min_length=1, max_length=100)
-    color: Optional[str] = None
+    color: Optional[ConstraintTypeColor] = None
+    is_hard: Optional[bool] = None
 
 
 class ConstraintTypeResponse(ConstraintType):
@@ -376,34 +391,155 @@ class ConstraintTypeResponse(ConstraintType):
 
     id: int
     account_id: UUID
+    color: Optional[ConstraintTypeColor] = None
     created_at: datetime
+    updated_at: datetime
+    is_deleted: bool = False
+
+
+# ==========================================
+# SPECIAL DATE (HOLIDAY) SCHEMAS
+# ==========================================
+
+class SpecialDateBase(SnakeCaseModel):
+    date: date
+    label: str = Field(..., min_length=1, max_length=200)
+    type: SpecialDateType
+
+
+class SpecialDateResponse(SpecialDateBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    account_id: UUID
+    created_at: datetime
+    created_by: Optional[UUID] = None
+    updated_at: datetime
+    updated_by: Optional[UUID] = None
+
+
+class SpecialDateBulkEntry(SpecialDateBase):
+    pass
+
+
+class SpecialDatesBulkUpdate(SnakeCaseModel):
+    upserts: List[SpecialDateBulkEntry] = []
+    delete_dates: List[date] = []
 
 
 # ==========================================
 # CONSTRAINT SCHEMAS
 # ==========================================
 
-class Constraint(SnakeCaseModel):
-    constraint_date: date
-    constraint_type_id: int
-    staff_member_id: UUID
+class ConstraintEntry(SnakeCaseModel):
+    type_id: int
+    date: date
+    staff_member_ids: List[UUID] = Field(default_factory=list)
 
 
-class ConstraintCreate(Constraint):
-    unit_id: UUID
+class MonthlyConstraintsUpdate(SnakeCaseModel):
+    entries: List[ConstraintEntry]
 
 
-class ConstraintUpdate(SnakeCaseModel):
-    constraint_date: Optional[date] = None
-    constraint_type_id: Optional[int] = None
-    staff_member_id: Optional[UUID] = None
-
-
-class ConstraintResponse(Constraint):
+class ConstraintResponse(SnakeCaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     unit_id: UUID
+    type_id: int
+    date: date
+    staff_member_ids: List[UUID]
+    submitted_staff_member_ids: List[UUID] = Field(default_factory=list)
+    version: int
+    created_at: datetime
+    created_by: Optional[UUID] = None
+
+
+class ConstraintUserComment(SnakeCaseModel):
+    date: Optional[dt.date] = None  # None => the month's general comment
+    comment: str
+
+
+class ConstraintUserComments(SnakeCaseModel):
+    staff_member_id: UUID
+    comments: List[ConstraintUserComment]
+
+
+class MonthlyConstraintsResponse(SnakeCaseModel):
+    constraints: List[ConstraintResponse]
+    user_comments: List[ConstraintUserComments]
+
+
+class PullSubmissionsResponse(SnakeCaseModel):
+    constraints: List[ConstraintResponse]
+    user_comments: List[ConstraintUserComments]
+
+
+class ConstraintHistoryResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    version: int
+    created_at: datetime
+    created_by: Optional[UUID] = None
+
+
+# ==========================================
+# CONSTRAINT SUBMISSION METADATA SCHEMAS
+# ==========================================
+
+class ConstraintSubmissionMetadataUpdate(SnakeCaseModel):
+    unit_id: UUID
+    month: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+
+
+class ConstraintSubmissionMetadataResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    unit_id: UUID
+    month: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    updated_by: Optional[UUID] = None
+    pulled_at: Optional[datetime] = None
+    pulled_by: Optional[UUID] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+# ==========================================
+# CONSTRAINTS SUBMISSION SCHEMAS (member-facing)
+# ==========================================
+
+class ConstraintSubmissionEntry(SnakeCaseModel):
+    date: Optional[dt.date] = None  # None => the month's general-comment row
+    type_id: Optional[int] = None
+    comment: Optional[str] = Field(None, max_length=1024)
+
+
+class MemberMonthlySubmissionUpdate(SnakeCaseModel):
+    entries: List[ConstraintSubmissionEntry]
+
+
+class StaffSubmissionStatusResponse(SnakeCaseModel):
+    staff_member_id: UUID
+    name: str
+    submitted: bool
+
+
+class ConstraintSubmissionResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    unit_id: UUID
+    staff_member_id: UUID
+    month: str
+    date: Optional[dt.date] = None
+    type_id: Optional[int] = None
+    comment: Optional[str] = None
+    submitted_empty: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -533,4 +669,8 @@ class UserResponse(User):
     hospital_name: Optional[str] = None
     division_name: Optional[str] = None
     unit_name: Optional[str] = None
+    account_id: Optional[UUID] = None
+    # None when not applicable (no unit, or no staff_members row for this
+    # user in it — e.g. a pure admin account); True/False otherwise.
+    constraints_submitted_this_month: Optional[bool] = None
 

@@ -1,7 +1,7 @@
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from app.schemas.schemas import UserResponse, UserCreate
-from app.models.models import User as UserModel
+from app.models.models import User as UserModel, Unit as UnitModel
 from uuid import UUID
 
 
@@ -25,7 +25,7 @@ class UserRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_by_email(self, email: str):
+    def get_by_email(self, email: str, include_deleted: bool = False):
         target = _canonical_email(email)
 
         lower_email = func.lower(UserModel.email)
@@ -38,11 +38,17 @@ class UserRepository:
         )
         normalized_column = canonical_local + "@" + canonical_domain
 
-        user = self.db.query(UserModel).filter(normalized_column == target).first()
+        query = self.db.query(UserModel).filter(normalized_column == target)
+        if not include_deleted:
+            query = query.filter(UserModel.is_deleted.is_(False))
+        user = query.first()
         return UserResponse.model_validate(user) if user else None
 
-    def get_by_firebase_uid(self, firebase_uid: str):
-        user = self.db.query(UserModel).filter(UserModel.firebase_uid == firebase_uid).first()
+    def get_by_firebase_uid(self, firebase_uid: str, include_deleted: bool = False):
+        query = self.db.query(UserModel).filter(UserModel.firebase_uid == firebase_uid)
+        if not include_deleted:
+            query = query.filter(UserModel.is_deleted.is_(False))
+        user = query.first()
         return UserResponse.model_validate(user) if user else None
 
     def set_firebase_uid(self, user_id: UUID, firebase_uid: str):
@@ -53,9 +59,15 @@ class UserRepository:
         self.db.commit()
         return UserResponse.model_validate(obj)
 
-    def get_all(self, division_id: UUID):
-        users = self.db.query(UserModel).filter(UserModel.division_id == division_id).all()
-        return [UserResponse.model_validate(u) for u in users]
+    def get_all(self, division_id: UUID, include_deleted: bool = False):
+        query = (
+            self.db.query(UserModel)
+            .outerjoin(UnitModel, UserModel.unit_id == UnitModel.id)
+            .filter(or_(UserModel.division_id == division_id, UnitModel.division_id == division_id))
+        )
+        if not include_deleted:
+            query = query.filter(UserModel.is_deleted.is_(False))
+        return [UserResponse.model_validate(u) for u in query.all()]
 
     def create(self, data: UserCreate):
         payload = data.model_dump(exclude={"id", "created_at", "updated_at"})
@@ -65,11 +77,11 @@ class UserRepository:
         return UserResponse.model_validate(db_obj)
 
     def delete(self, user_id: UUID, division_id: UUID):
-        obj = self.db.query(UserModel).filter(UserModel.id == user_id, UserModel.division_id == division_id).first()
+        obj = self.db.query(UserModel).filter(UserModel.id == user_id, UserModel.division_id == division_id, UserModel.is_deleted.is_(False)).first()
         if not obj:
             return None
         name = obj.name
-        self.db.delete(obj)
+        obj.is_deleted = True
         self.db.commit()
         return name
 
@@ -82,4 +94,3 @@ class UserRepository:
             self.db.commit()
             return UserResponse.model_validate(obj)
         return None
-

@@ -13,7 +13,8 @@ from sqlalchemy import (
     Date,
     ARRAY,
     UniqueConstraint,
-    Enum as SQLEnum
+    Enum as SQLEnum,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
@@ -40,6 +41,12 @@ class StaffRole(str, enum.Enum):
     INTERN = "intern"
     NURSE = "nurse"
     CLERK = "clerk"
+
+
+class SpecialDateType(str, enum.Enum):
+    PARTIAL_DAY = "partial_day"
+    SABBATICAL = "sabbatical"
+    REGULAR = "regular"
 
 
 class Account(Base):
@@ -171,21 +178,99 @@ class Shift(Base):
 
 
 class ConstraintType(Base):
-    __tablename__ = "constraints_types"
+    __tablename__ = "constraint_types"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    color: Mapped[Optional[str]] = mapped_column(Text)
+    color: Mapped[Optional[dict]] = mapped_column(JSONB)
+    is_hard: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class SpecialDate(Base):
+    __tablename__ = "special_dates"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True)
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[SpecialDateType] = mapped_column(SQLEnum(SpecialDateType, name="special_date_type"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
 
 
 class Constraint(Base):
+    """The master monthly constraints calendar. Insert-only / versioned: a
+    save never updates an existing row, it inserts a fresh batch of rows for
+    the whole unit+month, all sharing the same new `version`. "Current state"
+    of a month = the rows carrying MAX(version) for that unit_id+date range."""
     __tablename__ = "constraints"
+    __table_args__ = (
+        UniqueConstraint("unit_id", "type_id", "date", "version", name="constraints_unit_id_type_id_date_version_key"),
+        Index("idx_constraints_unit_id_date_version", "unit_id", "date", "version"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
-    constraint_date: Mapped[date] = mapped_column(Date, nullable=False)
-    constraint_type_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    type_id: Mapped[int] = mapped_column(Integer, ForeignKey("constraint_types.id", ondelete="RESTRICT"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    staff_member_ids: Mapped[List[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), default=list, server_default="{}", nullable=False)
+    submitted_staff_member_ids: Mapped[List[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), default=list, server_default="{}", nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
+
+
+class MonthlyConstraintsVersion(Base):
+    __tablename__ = "monthly_constraints_versions"
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), primary_key=True)
+    month: Mapped[str] = mapped_column(Text, primary_key=True)  # "YYYY-MM"
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+
+
+class ConstraintSubmissionMetadata(Base):
+    __tablename__ = "constraint_submission_metadata"
+    __table_args__ = (
+        UniqueConstraint("unit_id", "month", name="constraint_submission_metadata_unit_id_month_key"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
+    pulled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    pulled_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class ConstraintsSubmission(Base):
+    __tablename__ = "constraints_submissions"
+    __table_args__ = (
+        Index(
+            "ix_constraints_submissions_per_date_unique",
+            "unit_id", "staff_member_id", "month", "date",
+            unique=True,
+            postgresql_where=text("date IS NOT NULL"),
+        ),
+        Index(
+            "ix_constraints_submissions_general_comment_unique",
+            "unit_id", "staff_member_id", "month",
+            unique=True,
+            postgresql_where=text("date IS NULL"),
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
     staff_member_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("staff_members.id", ondelete="CASCADE"), nullable=False)
+    month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
+    date: Mapped[Optional[date]] = mapped_column(Date)
+    type_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("constraint_types.id", ondelete="CASCADE"))
+    comment: Mapped[Optional[str]] = mapped_column(Text)
+    submitted_empty: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -225,12 +310,21 @@ class ScheduleVersion(Base):
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
-        UniqueConstraint("unit_id", "email", name="users_unit_id_email_key"),
-        UniqueConstraint("division_id", "email", name="users_division_id_email_key"),
         Index("idx_users_email", "email"),
         Index("idx_users_division_id", "division_id"),
         Index("idx_users_unit_id", "unit_id"),
-        Index("idx_users_firebase_uid", "firebase_uid", unique=True),
+        Index(
+            "ux_users_unit_id_email_active", "unit_id", "email",
+            unique=True, postgresql_where=text("is_deleted = false"),
+        ),
+        Index(
+            "ux_users_division_id_email_active", "division_id", "email",
+            unique=True, postgresql_where=text("is_deleted = false"),
+        ),
+        Index(
+            "ux_users_firebase_uid_active", "firebase_uid",
+            unique=True, postgresql_where=text("is_deleted = false"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -242,6 +336,7 @@ class User(Base):
     staff_role: Mapped[StaffRole] = mapped_column(SQLEnum(StaffRole, name="staffrole"), nullable=False)
     role: Mapped[UserRole] = mapped_column(SQLEnum(UserRole, name="userrole"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
