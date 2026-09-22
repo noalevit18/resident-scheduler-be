@@ -49,6 +49,11 @@ class SpecialDateType(str, enum.Enum):
     REGULAR = "regular"
 
 
+class SubmissionFeature(str, enum.Enum):
+    CONSTRAINTS = "constraints"
+    ON_CALL = "on_call"
+
+
 class Account(Base):
     __tablename__ = "accounts"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -139,12 +144,22 @@ class Senior(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
-class ShiftStation(Base):
-    __tablename__ = "shift_stations"
+class OnCallStation(Base):
+    __tablename__ = "on_call_stations"
+    __table_args__ = (
+        Index(
+            "ux_on_call_stations_division_id_name_active",
+            "division_id", "name",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+        ),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    division_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
 
 
 class Station(Base):
@@ -162,17 +177,6 @@ class Station(Base):
     recurrence_type: Mapped[Optional[RecurrenceType]] = mapped_column(SQLEnum(RecurrenceType, name="recurrence_type_enum"))
     recurrence_interval: Mapped[Optional[int]] = mapped_column(Integer)
     recurrence_base_date: Mapped[Optional[date]] = mapped_column(Date)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-
-
-class Shift(Base):
-    __tablename__ = "shifts"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
-    shift_date: Mapped[date] = mapped_column(Date, nullable=False)
-    shift_station_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    staff_member_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("staff_members.id", ondelete="CASCADE"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -230,34 +234,80 @@ class MonthlyConstraintsVersion(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
 
 
-class ConstraintSubmissionMetadata(Base):
-    __tablename__ = "constraint_submission_metadata"
+class MonthOnCallVersion(Base):
+    """Insert-only, one row per (unit_id, month, version) — every
+    new on-call version gets its OWN row rather than updating the previous
+    one, so the publish history (which version was published, when, by
+    whom) is preserved rather than overwritten on the next save."""
+    __tablename__ = "monthly_on_call_versions"
     __table_args__ = (
-        UniqueConstraint("unit_id", "month", name="constraint_submission_metadata_unit_id_month_key"),
+        UniqueConstraint("unit_id", "month", "version", name="monthly_on_call_versions_unit_id_month_version_key"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
     month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
-    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    published_at: Mapped[Optional[date]] = mapped_column(Date)
+    published_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class OnCallShift(Base):
+    """One row per (unit_id, date, version); """
+    __tablename__ = "on_call_shifts"
+    __table_args__ = (
+        UniqueConstraint("unit_id", "date", "version", name="on_call_shifts_unit_id_date_version_key"),
+        Index("idx_on_call_shifts_unit_id_date_version", "unit_id", "date", "version"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    division_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), nullable=False)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    station_assignments: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
+    # {"<staff_member_id str>": <on_call_station_id int>, ...} — the full assignment for this date
+    submitted_assignments: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
+
+
+class StaffMemberSubmissionMetadata(Base):
+    """One row per (unit_id, month): the submission window (start_time/
+    end_time) of constraints and on-call.
+    pull_information tracks each feature's own pulled_at/pulled_by
+    independently, keyed by feature name, e.g.
+    {"constraints": {"pulled_at": "...", "pulled_by": "<user-id>"}}."""
+    __tablename__ = "staff_member_submission_metadata"
+    __table_args__ = (
+        UniqueConstraint("unit_id", "month", name="staff_member_submission_metadata_unit_id_month_key"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
+    start_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     end_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
-    pulled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    pulled_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
+    pull_information: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
-class ConstraintsSubmission(Base):
-    __tablename__ = "constraints_submissions"
+class StaffMemberSubmission(Base):
+    """Shared self-serve submission row: a single date's submission can
+    carry a constraint type, an on-call station, or both at once. Every
+    submission call replaces the full row (both fields together)."""
+    __tablename__ = "staff_member_submissions"
     __table_args__ = (
         Index(
-            "ix_constraints_submissions_per_date_unique",
+            "ix_staff_member_submissions_per_date_unique",
             "unit_id", "staff_member_id", "month", "date",
             unique=True,
             postgresql_where=text("date IS NOT NULL"),
         ),
         Index(
-            "ix_constraints_submissions_general_comment_unique",
+            "ix_staff_member_submissions_general_comment_unique",
             "unit_id", "staff_member_id", "month",
             unique=True,
             postgresql_where=text("date IS NULL"),
@@ -268,7 +318,8 @@ class ConstraintsSubmission(Base):
     staff_member_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("staff_members.id", ondelete="CASCADE"), nullable=False)
     month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
     date: Mapped[Optional[date]] = mapped_column(Date)
-    type_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("constraint_types.id", ondelete="CASCADE"))
+    constraint_type_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("constraint_types.id", ondelete="CASCADE"))
+    on_call_station_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("on_call_stations.id", ondelete="CASCADE"))
     comment: Mapped[Optional[str]] = mapped_column(Text)
     submitted_empty: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

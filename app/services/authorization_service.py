@@ -119,6 +119,24 @@ class AuthorizationService:
         if not target_division_id or target_division_id != self.user_division_id(user):
             raise AuthorizationError("This unit is not in your division")
 
+    def authorize_division(self, user: UserResponse, division_id: UUID) -> None:
+        """Division-scoped equivalent of authorize_unit, for endpoints keyed
+        by division_id rather than unit_id (e.g on_call_stations)."""
+        if user.role in (UserRole.unit_admin, UserRole.user):
+            if division_id != self.user_division_id(user):
+                raise AuthorizationError("This division is not yours")
+            return
+        if user.role == UserRole.division_admin:
+            if division_id != user.division_id:
+                raise AuthorizationError("This division is not yours")
+            return
+        if user.role == UserRole.owner:
+            target_account_id = self.account_id_for_division(division_id)
+            if not target_account_id or target_account_id != self.user_account_id(user):
+                raise AuthorizationError("This division is not in your account")
+            return
+        raise AuthorizationError("Unrecognized role")
+
     def authorize_account(self, user: UserResponse, account_id: UUID) -> None:
         """Every role's own account is derived the same way — no role
         branching needed here (unlike `authorize_unit`, where higher roles
