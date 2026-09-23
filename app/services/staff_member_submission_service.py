@@ -3,8 +3,8 @@ from datetime import date
 from typing import Optional
 from uuid import UUID
 
-from app.repositories.constraints_submission_repository import ConstraintsSubmissionRepository
-from app.services.constraint_submission_metadata_service import ConstraintSubmissionMetadataService
+from app.repositories.staff_member_submission_repository import StaffMemberSubmissionRepository
+from app.services.staff_member_submission_metadata_service import StaffMemberSubmissionMetadataService
 from app.services.staff_service import StaffService
 from app.services.authorization_service import AuthorizationError
 from app.schemas.schemas import MemberMonthlySubmissionUpdate
@@ -13,11 +13,15 @@ from app.context import get_current_user_label
 logger = logging.getLogger(__name__)
 
 
-class ConstraintsSubmissionService:
+class StaffMemberSubmissionService:
+    """Shared self-serve submission subsystem: a single date's entry can
+    carry a constraint_type_id, an on_call_station_id, or both at once —
+    used by both the constraints and on-call features' pull flows."""
+
     def __init__(
         self,
-        repository: ConstraintsSubmissionRepository,
-        submission_metadata_service: ConstraintSubmissionMetadataService,
+        repository: StaffMemberSubmissionRepository,
+        submission_metadata_service: StaffMemberSubmissionMetadataService,
         staff_service: StaffService,
     ):
         self.repository = repository
@@ -78,9 +82,13 @@ class ConstraintsSubmissionService:
         dated_entries = [e for e in data.entries if e.date is not None]
         seen_dates = {e.date for e in dated_entries}
         if len(seen_dates) != len(dated_entries):
-            raise ValueError("Only one constraint type is allowed per date")
+            raise ValueError("Only one submission entry is allowed per date")
 
-        self.submission_metadata_service.assert_window_open(unit_id, month)  # raises SubmissionWindowError if closed
+        # The submission window is shared by every feature — gate on it
+        # once if any entry carries a constraint_type_id or an
+        # on_call_station_id.
+        if any(e.constraint_type_id is not None or e.on_call_station_id is not None for e in data.entries):
+            self.submission_metadata_service.assert_window_open(unit_id, month)
 
         rows = self.repository.upsert_many(unit_id, staff_member.id, month, data.entries, submitted_empty=empty)
         logger.info(

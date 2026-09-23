@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
 from app.schemas.schemas import User, UserResponse, UserUpdate
 from app.services.user_service import UserService
-from app.services.constraints_submission_service import ConstraintsSubmissionService
-from app.dependencies import get_user_service, get_constraints_submission_service
+from app.services.staff_member_submission_service import StaffMemberSubmissionService
+from app.dependencies import get_user_service, get_staff_member_submission_service
 from app.auth import get_current_user
 from app.context import bind_current_user
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.post("/login", response_model=UserResponse)
 def login_user(
     service: UserService = Depends(get_user_service),
-    submission_service: ConstraintsSubmissionService = Depends(get_constraints_submission_service),
+    submission_service: StaffMemberSubmissionService = Depends(get_staff_member_submission_service),
     current_user: dict = Depends(get_current_user)
 ):
     try:

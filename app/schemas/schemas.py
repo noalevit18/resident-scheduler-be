@@ -5,7 +5,7 @@ from datetime import datetime, date
 from typing import Optional, List, Any, Dict
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 # ==========================================
@@ -59,6 +59,11 @@ class SpecialDateType(str, enum.Enum):
     partial_day = "partial_day"
     sabbatical = "sabbatical"
     regular = "regular"
+
+
+class SubmissionFeature(str, enum.Enum):
+    constraints = "constraints"
+    on_call = "on_call"
 
 
 # ==========================================
@@ -259,28 +264,36 @@ class SeniorResponse(Senior):
 
 
 # ==========================================
-# SHIFT STATION SCHEMAS
+# ON-CALL STATION SCHEMAS
 # ==========================================
 
-class ShiftStation(SnakeCaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    created_at: Optional[datetime] = None
+class OnCallStationCreate(SnakeCaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
 
 
-class ShiftStationCreate(ShiftStation):
-    unit_id: UUID
+class OnCallStationsCreate(SnakeCaseModel):
+    entries: List[OnCallStationCreate]
 
 
-class ShiftStationUpdate(SnakeCaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
+class OnCallStationUpdateEntry(SnakeCaseModel):
+    id: int
+    name: Optional[str] = Field(None, min_length=1, max_length=64)
 
 
-class ShiftStationResponse(ShiftStation):
+class OnCallStationsUpdate(SnakeCaseModel):
+    entries: List[OnCallStationUpdateEntry] = Field(default_factory=list)
+    deleted: List[int] = Field(default_factory=list)
+
+
+class OnCallStationResponse(SnakeCaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    unit_id: UUID
+    division_id: UUID
+    name: str
     created_at: datetime
+    created_by: Optional[UUID] = None
+    is_deleted: bool = False
 
 
 # ==========================================
@@ -329,32 +342,54 @@ class StationResponse(Station):
 
 
 # ==========================================
-# SHIFT SCHEMAS
+# ON-CALL SHIFT SCHEMAS
 # ==========================================
 
-class Shift(SnakeCaseModel):
-    shift_date: date
-    shift_station_id: int
-    staff_member_id: UUID
+class OnCallShiftEntry(SnakeCaseModel):
+    date: date
+    station_assignments: Dict[UUID, int] = Field(default_factory=dict)
 
 
-class ShiftCreate(Shift):
-    unit_id: UUID
+class MonthlyOnCallShiftsUpdate(SnakeCaseModel):
+    """`entries` is the complete set of dates the month should have — any
+    previously-saved date missing from it is treated as deleted (no
+    carry-forward); there's no separate tombstone/deleted list."""
+    entries: List[OnCallShiftEntry] = Field(default_factory=list)
+    is_published: bool = False
 
 
-class ShiftUpdate(SnakeCaseModel):
-    shift_date: Optional[date] = None
-    shift_station_id: Optional[int] = None
-    staff_member_id: Optional[UUID] = None
-
-
-class ShiftResponse(Shift):
+class OnCallShiftResponse(SnakeCaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    division_id: UUID
     unit_id: UUID
+    date: date
+    station_assignments: Dict[UUID, int]
+    submitted_assignments: Dict[UUID, int] = Field(default_factory=dict)
+    version: int
     created_at: datetime
-    updated_at: datetime
+    created_by: Optional[UUID] = None
+
+
+class MonthlyOnCallShiftsResponse(SnakeCaseModel):
+    shifts: List[OnCallShiftResponse]
+    version: int
+    is_published: bool = False
+    published_at: Optional[date] = None
+    published_by: Optional[UUID] = None
+
+
+class OnCallShiftHistoryResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    version: int
+    is_published: bool = False
+    published_at: Optional[date] = None
+    published_by: Optional[UUID] = None
+    created_at: datetime
+    created_by: Optional[UUID] = None
 
 
 # ==========================================
@@ -484,43 +519,59 @@ class ConstraintHistoryResponse(SnakeCaseModel):
 
 
 # ==========================================
-# CONSTRAINT SUBMISSION METADATA SCHEMAS
+# SUBMISSION WINDOW SCHEMAS (shared: constraints + on-call)
 # ==========================================
 
-class ConstraintSubmissionMetadataUpdate(SnakeCaseModel):
+class SubmissionWindowUpdate(SnakeCaseModel):
     unit_id: UUID
     month: str
-    start_time: datetime
+    start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
 
 
-class ConstraintSubmissionMetadataResponse(SnakeCaseModel):
+class PullInformationEntry(SnakeCaseModel):
+    pulled_at: Optional[datetime] = None
+    pulled_by: Optional[UUID] = None
+
+    @field_validator("pulled_at", mode="before")
+    @classmethod
+    def _parse_pulled_at(cls, value):
+        # Postgres renders a timestamptz's UTC offset as "+00" (no minutes)
+        # when a value written straight from SQL (e.g. jsonb_build_object)
+        # lands in this jsonb column — stricter than pydantic-core's
+        # RFC3339 parser accepts, though datetime.fromisoformat handles it.
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        return value
+
+
+class SubmissionWindowResponse(SnakeCaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     unit_id: UUID
     month: str
-    start_time: datetime
+    start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     updated_by: Optional[UUID] = None
-    pulled_at: Optional[datetime] = None
-    pulled_by: Optional[UUID] = None
+    pull_information: Dict[SubmissionFeature, PullInformationEntry] = {}
     created_at: datetime
     updated_at: datetime
 
 
 # ==========================================
-# CONSTRAINTS SUBMISSION SCHEMAS (member-facing)
+# STAFF MEMBER SUBMISSION SCHEMAS (member-facing, shared: constraints + on-call)
 # ==========================================
 
-class ConstraintSubmissionEntry(SnakeCaseModel):
+class StaffMemberSubmissionEntry(SnakeCaseModel):
     date: Optional[dt.date] = None  # None => the month's general-comment row
-    type_id: Optional[int] = None
+    constraint_type_id: Optional[int] = None
+    on_call_station_id: Optional[int] = None
     comment: Optional[str] = Field(None, max_length=1024)
 
 
 class MemberMonthlySubmissionUpdate(SnakeCaseModel):
-    entries: List[ConstraintSubmissionEntry]
+    entries: List[StaffMemberSubmissionEntry]
 
 
 class StaffSubmissionStatusResponse(SnakeCaseModel):
@@ -529,7 +580,7 @@ class StaffSubmissionStatusResponse(SnakeCaseModel):
     submitted: bool
 
 
-class ConstraintSubmissionResponse(SnakeCaseModel):
+class StaffMemberSubmissionResponse(SnakeCaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -537,7 +588,8 @@ class ConstraintSubmissionResponse(SnakeCaseModel):
     staff_member_id: UUID
     month: str
     date: Optional[dt.date] = None
-    type_id: Optional[int] = None
+    constraint_type_id: Optional[int] = None
+    on_call_station_id: Optional[int] = None
     comment: Optional[str] = None
     submitted_empty: bool = False
     created_at: datetime
