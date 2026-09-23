@@ -3,9 +3,10 @@ from collections import defaultdict
 from typing import Optional
 from uuid import UUID
 
+from app.models.models import SubmissionFeature
 from app.repositories.constraint_repository import ConstraintRepository
-from app.repositories.constraints_submission_repository import ConstraintsSubmissionRepository
-from app.services.constraint_submission_metadata_service import ConstraintSubmissionMetadataService
+from app.repositories.staff_member_submission_repository import StaffMemberSubmissionRepository
+from app.services.staff_member_submission_metadata_service import StaffMemberSubmissionMetadataService
 from app.services.constraint_type_service import ConstraintTypeService
 from app.services.staff_service import StaffService
 from app.schemas.schemas import (
@@ -20,8 +21,8 @@ class ConstraintService:
     def __init__(
         self,
         repository: ConstraintRepository,
-        submission_repository: ConstraintsSubmissionRepository,
-        submission_metadata_service: ConstraintSubmissionMetadataService,
+        submission_repository: StaffMemberSubmissionRepository,
+        submission_metadata_service: StaffMemberSubmissionMetadataService,
         constraint_type_service: ConstraintTypeService,
         staff_service: StaffService,
     ):
@@ -79,17 +80,18 @@ class ConstraintService:
         return rows
 
     def pull_member_submissions(self, unit_id: UUID, month: str, created_by: Optional[UUID]):
-        """Processes every staff member's `constraints_submissions` rows for
-        this unit+month into the official `constraints` calendar."""
+        """Processes every staff member's `staff_member_submissions` rows
+        (the ones carrying a constraint_type_id) for this unit+month into
+        the official `constraints` calendar."""
         submissions = self.submission_repository.get_by_unit_month(unit_id, month)
         existing = self.repository.get_by_month(unit_id, month)
         user_comments = self.get_users_comments(submissions)
 
         submitted: dict = defaultdict(list)
         for s in submissions:
-            if s.date is None or s.type_id is None:
+            if s.date is None or s.constraint_type_id is None:
                 continue
-            submitted[(s.type_id, s.date)].append(s.staff_member_id)
+            submitted[(s.constraint_type_id, s.date)].append(s.staff_member_id)
 
         merged: dict = {}
         submitted_ids_by_key: dict = {}
@@ -115,7 +117,7 @@ class ConstraintService:
             unit_id, month, entries, created_by, carry_forward_untouched=False,
             submitted_staff_member_ids_by_key=submitted_ids_by_key,
         )
-        self.submission_metadata_service.mark_pulled(unit_id, month, created_by)
+        self.submission_metadata_service.mark_pulled(unit_id, month, SubmissionFeature.CONSTRAINTS, created_by)
         logger.info(
             "Pulled %d submission-derived entries into constraints (unit_id=%s, month=%s) by %s",
             len(rows), unit_id, month, get_current_user_label(),
