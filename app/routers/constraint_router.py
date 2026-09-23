@@ -33,6 +33,18 @@ def _validate_month(month: str) -> None:
     if not MONTH_PATTERN.match(month):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="month must be in YYYY-MM format")
 
+@router.get("", response_model=MonthlyConstraintsResponse)
+def get_constraints(
+    unit_id: UUID, month: str, version_id: int | None = None,
+    service: ConstraintService = Depends(get_constraint_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    _validate_month(month)
+    user = authz.get_logged_in_user_or_raise(current_user)
+    # A regular `user` may view any unit within their own division here, not just their own unit.
+    authz.authorize_unit_view(user, unit_id)
+    return service.get_monthly_constraints(unit_id, month, version_id)
 
 # --- Monthly master calendar (the default view of "constraints") ---
 
