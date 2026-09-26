@@ -573,17 +573,6 @@ class StaffMemberSubmissionEntry(SnakeCaseModel):
 class MemberMonthlySubmissionUpdate(SnakeCaseModel):
     entries: List[StaffMemberSubmissionEntry]
 
-    id: int
-    unit_id: UUID
-    month: str
-    start_time: datetime
-    end_time: Optional[datetime] = None
-    updated_by: Optional[UUID] = None
-    pulled_at: Optional[datetime] = None
-    pulled_by: Optional[UUID] = None
-    created_at: datetime
-    updated_at: datetime
-
 
 # ==========================================
 # CONSTRAINTS SUBMISSION SCHEMAS (member-facing)
