@@ -244,6 +244,7 @@ class StaffResponse(Staff):
 
 class Senior(SnakeCaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    user_id: Optional[UUID] = None
 
 
 class SeniorCreate(Senior):
@@ -252,15 +253,18 @@ class SeniorCreate(Senior):
 
 class SeniorUpdate(SnakeCaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    user_id: Optional[UUID] = None
 
 
 class SeniorResponse(Senior):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: UUID
     unit_id: UUID
     created_at: datetime
-    updated_at: datetime
+    created_by: Optional[UUID] = None
+    is_deleted: bool = False
+    deleted_by: Optional[UUID] = None
 
 
 # ==========================================
