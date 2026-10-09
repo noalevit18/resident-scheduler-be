@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Resident Scheduler API", lifespan=lifespan)
 
-allowed_origins_raw = os.getenv("ALLOWED_CORS_ORIGINS", "http://localhost:3000")
+allowed_origins_raw = os.getenv("ALLOWED_CORS_ORIGINS", "http://localhost:3000,http://localhost:3002")
 ORIGINS = [origin.strip() for origin in allowed_origins_raw.split(",") if origin.strip()]
 # Apply the middleware
 app.add_middleware(

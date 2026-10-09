@@ -16,6 +16,9 @@ class SeniorService:
     def get_all_seniors(self, unit_id: UUID, include_deleted: bool = False):
         return self.repository.get_all(unit_id, include_deleted)
 
+    def get_unit_senior_ids(self, ids: list[UUID], unit_id: UUID) -> set[UUID]:
+        return self.repository.get_by_ids(ids, unit_id)
+
     def create_senior(self, data: SeniorCreate, created_by: Optional[UUID]):
         senior = self.repository.create(data, created_by)
         logger.info("Created senior %s (unit_id=%s) by %s", senior.name, data.unit_id, get_current_user_label())

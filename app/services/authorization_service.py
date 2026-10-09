@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 # "admins + owners" per the constraints feature's access rules.
 ADMIN_ROLES = {UserRole.owner, UserRole.division_admin, UserRole.unit_admin}
+DIVISION_ADMIN_ROLES = {UserRole.owner, UserRole.division_admin}
 
 
 class AuthorizationError(Exception):
@@ -46,6 +47,10 @@ class AuthorizationService:
     def require_admin_role(self, user: UserResponse) -> None:
         if user.role not in ADMIN_ROLES:
             raise AuthorizationError("This action requires an admin or owner role")
+
+    def require_division_admin_role(self, user: UserResponse) -> None:
+        if user.role not in DIVISION_ADMIN_ROLES:
+            raise AuthorizationError("This action requires a division admin or owner role")
 
     def is_admin(self, user: UserResponse) -> bool:
         return user.role in ADMIN_ROLES
@@ -107,11 +112,23 @@ class AuthorizationService:
 
     def authorize_unit_view(self, user: UserResponse, unit_id: UUID) -> None:
         """Like `authorize_unit`, but for the read-only "view the calendar"
-        endpoints (GET /constraints, /history, /submission-metadata) where a
+        endpoints (/history, /submission-metadata) where a
         plain `user` may see any unit in their own division — not just their
         own unit — same scope a division_admin already gets. Every other
         role's scope is unchanged from `authorize_unit`."""
         if user.role != UserRole.user:
+            self.authorize_unit(user, unit_id)
+            return
+        unit = self.unit_service.get_unit_details(unit_id)
+        target_division_id = unit["division_id"] if unit else None
+        if not target_division_id or target_division_id != self.user_division_id(user):
+            raise AuthorizationError("This unit is not in your division")
+
+    def authorize_division_view(self, user: UserResponse, unit_id: UUID) -> None:
+        """For read-only endpoints open to every user of the unit's division
+        (GET schedule, stations, on-call, constraints): any role may read any
+        unit in their own division. An owner keeps their account-wide scope."""
+        if user.role == UserRole.owner:
             self.authorize_unit(user, unit_id)
             return
         unit = self.unit_service.get_unit_details(unit_id)
