@@ -307,42 +307,180 @@ class OnCallStationResponse(SnakeCaseModel):
 class Station(SnakeCaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     is_default: bool = False
+    is_secondary: bool = False
+    secondary_to: List[int] = Field(default_factory=list)
     certification_id: Optional[int] = None
     bg_color: Optional[str] = None
     border_color: Optional[str] = None
+    text_color: Optional[str] = None
     optional: bool = False
     min_staff_members: Optional[int] = None
+    min_staff_on_sabbatical: Optional[int] = None
+    min_staff_on_half_day: Optional[int] = None
     active_days: Optional[List[int]] = []
     recurrence_type: Optional[RecurrenceType] = None
     recurrence_interval: Optional[int] = None
     recurrence_base_date: Optional[date] = None
+    display_order: Optional[int] = None
+    enable_stand_by: bool = False
+    active_on_sabbatical: bool = False
+    prefer_day_before_on_call: bool = False
 
 
 class StationCreate(Station):
     unit_id: UUID
+    on_call_station_ids: List[int] = Field(default_factory=list)
+    effective_from: date = Field(default_factory=date.today)
 
 
 class StationUpdate(SnakeCaseModel):
+    """Only the fields sent are applied (an explicit null clears a field —
+    e.g. recurrence_type: null makes the station manual). Global fields
+    (name, colors, display_order) update the station in place. A change to
+    any versioned field requires `effective_from` and creates a station
+    version from that date (or replaces an unpinned version with the same
+    date). A change to a recurrence field (active_days, recurrence_*) can't
+    have an `effective_from` before the current month. Omitting
+    `on_call_station_ids` keeps the current mappings."""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     is_default: Optional[bool] = None
+    is_secondary: Optional[bool] = None
+    secondary_to: Optional[List[int]] = None
     certification_id: Optional[int] = None
     bg_color: Optional[str] = None
     border_color: Optional[str] = None
+    text_color: Optional[str] = None
     optional: Optional[bool] = None
     min_staff_members: Optional[int] = None
+    min_staff_on_sabbatical: Optional[int] = None
+    min_staff_on_half_day: Optional[int] = None
     active_days: Optional[List[int]] = None
     recurrence_type: Optional[RecurrenceType] = None
     recurrence_interval: Optional[int] = None
     recurrence_base_date: Optional[date] = None
+    display_order: Optional[int] = None
+    enable_stand_by: Optional[bool] = None
+    active_on_sabbatical: Optional[bool] = None
+    prefer_day_before_on_call: Optional[bool] = None
+    on_call_station_ids: Optional[List[int]] = None
+    effective_from: Optional[date] = None
+
+
+class StationVersionResponse(Station):
+    """A station as of one station version: global fields from the station,
+    versioned fields from the version."""
+    model_config = ConfigDict(from_attributes=True)
+
+    station_id: int
+    version: int
+    effective_from: date
+    is_retired: bool = False
+    # Pinned by the returned schedule version (always false for version 0).
+    is_pinned: bool = False
+    is_deleted: bool = False
+    on_call_station_ids: List[int] = Field(default_factory=list)
 
 
 class StationResponse(Station):
+    """Versioned fields are those of the version in effect today (or the
+    earliest version when every version starts later)."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     unit_id: UUID
+    version: int
+    effective_from: Optional[date] = None
+    is_retired: bool = False
+    on_call_station_ids: List[int] = Field(default_factory=list)
+    # Versions with effective_from > today ("changes scheduled from DD/MM").
+    upcoming_versions: List[StationVersionResponse] = Field(default_factory=list)
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
+    deleted_by: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
+
+
+# ==========================================
+# SCHEDULE SCHEMAS
+# ==========================================
+
+class ScheduleAssignmentEntry(SnakeCaseModel):
+    staff_member_id: UUID
+    is_stand_by: bool = False
+
+
+class ScheduleStationEntry(SnakeCaseModel):
+    """Either a configured station (`station_id`) or a custom station added
+    manually to this schedule only (`custom_name`) — exactly one of the two.
+    `display_order` defaults to the configured station's order (custom
+    stations: after the last station of the day)."""
+    station_id: Optional[int] = None
+    custom_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    display_order: Optional[int] = None
+    assignments: List[ScheduleAssignmentEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def station_or_custom(self):
+        if (self.station_id is None) == (self.custom_name is None):
+            raise ValueError("Exactly one of station_id or custom_name must be set")
+        return self
+
+
+class ScheduleDayEntry(SnakeCaseModel):
+    date: date
+    senior_id: Optional[UUID] = None
+    stations: List[ScheduleStationEntry] = Field(default_factory=list)
+
+
+class MonthlyScheduleUpdate(SnakeCaseModel):
+    """`days` is the complete desired state of the month — any date missing
+    from it has no stations/assignments/senior in the new version."""
+    days: List[ScheduleDayEntry] = Field(default_factory=list)
+    is_published: bool = False
+    # The version the client edited; a save is rejected with 409
+    # schedule_version_conflict when it's no longer the latest. Omit to
+    # overwrite regardless.
+    base_version: Optional[int] = None
+
+
+class ScheduleStationResponse(ScheduleStationEntry):
+    id: int
+    display_order: int
+
+
+class ScheduleDayResponse(ScheduleDayEntry):
+    stations: List[ScheduleStationResponse] = Field(default_factory=list)
+
+
+class ScheduleHistoryResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    version: int
+    is_published: bool = False
+    published_at: Optional[datetime] = None
+    published_by: Optional[UUID] = None
+    constraints_version: Optional[int] = None
+    on_call_version: Optional[int] = None
+    created_at: datetime
+    created_by: Optional[UUID] = None
+
+
+class MonthlyScheduleResponse(SnakeCaseModel):
+    """`stations`: per station, every version in effect on some day of the
+    month (the one in effect on the 1st plus those with effective_from inside
+    the month), plus every version the returned schedule version pins
+    (`is_pinned`)."""
+    days: List[ScheduleDayResponse]
+    stations: List[StationVersionResponse] = Field(default_factory=list)
+    version: int
+    is_published: bool = False
+    published_at: Optional[datetime] = None
+    published_by: Optional[UUID] = None
+    constraints_version: Optional[int] = None
+    on_call_version: Optional[int] = None
+    created_at: Optional[datetime] = None
 
 
 # ==========================================
@@ -607,93 +745,6 @@ class StaffMemberSubmissionResponse(SnakeCaseModel):
     submitted_empty: bool = False
     created_at: datetime
     updated_at: datetime
-
-
-# ==========================================
-# SCHEDULE STAFF MEMBER SCHEMAS
-# ==========================================
-
-class ScheduleStaffMember(SnakeCaseModel):
-    schedule_date: date
-    staff_member_id: UUID
-    station_id: int
-    is_stand_by: bool = False
-    created_at: Optional[datetime] = None
-
-
-class ScheduleStaffMemberCreate(ScheduleStaffMember):
-    unit_id: UUID
-
-
-class ScheduleStaffMemberUpdate(SnakeCaseModel):
-    schedule_date: Optional[date] = None
-    staff_member_id: Optional[UUID] = None
-    station_id: Optional[int] = None
-    is_stand_by: Optional[bool] = None
-
-
-class ScheduleStaffMemberResponse(ScheduleStaffMember):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    unit_id: UUID
-    created_at: datetime
-
-
-# ==========================================
-# SCHEDULE SENIOR SCHEMAS
-# ==========================================
-
-class ScheduleSenior(SnakeCaseModel):
-    schedule_date: date
-    senior_id: int
-    created_at: Optional[datetime] = None
-
-
-class ScheduleSeniorCreate(ScheduleSenior):
-    unit_id: UUID
-
-
-class ScheduleSeniorUpdate(SnakeCaseModel):
-    schedule_date: Optional[date] = None
-    senior_id: Optional[int] = None
-
-class ScheduleSeniorResponse(ScheduleSenior):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    unit_id: UUID
-    created_at: datetime
-
-
-# ==========================================
-# SCHEDULE VERSION SCHEMAS
-# ==========================================
-
-class ScheduleVersion(SnakeCaseModel):
-    is_published: bool = False
-    schedule: Dict[str, Any] = {}
-    update_admin_id: Optional[UUID] = None
-    created_at: Optional[datetime] = None
-
-
-class ScheduleVersionCreate(ScheduleVersion):
-    unit_id: UUID
-
-
-class ScheduleVersionUpdate(SnakeCaseModel):
-    is_published: Optional[bool] = None
-    schedule: Optional[Dict[str, Any]] = None
-    update_admin_id: Optional[UUID] = None
-
-
-class ScheduleVersionResponse(ScheduleVersion):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    unit_id: UUID
-    update_admin_id: Optional[UUID] = None
-    created_at: datetime
 
 
 # ==========================================

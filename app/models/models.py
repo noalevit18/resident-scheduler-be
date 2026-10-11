@@ -13,6 +13,7 @@ from sqlalchemy import (
     Date,
     ARRAY,
     UniqueConstraint,
+    CheckConstraint,
     Enum as SQLEnum,
     text,
 )
@@ -166,22 +167,95 @@ class OnCallStation(Base):
 
 
 class Station(Base):
+    """Station definition. GLOBAL fields (name, colors, display_order) live
+    only here and apply to every month, past ones included. VERSIONED fields
+    are mirrored here from the latest-effective `station_versions` row; what
+    applies on a given date is the version in effect on that date (greatest
+    `effective_from` <= date, ties to the higher version). Soft-deleted
+    rather than removed, since older schedule versions keep referencing it.
+    `recurrence_type` NULL means a manual (non-recurring) station."""
     __tablename__ = "stations"
+    __table_args__ = (
+        UniqueConstraint("unit_id", "firestore_id", name="stations_unit_id_firestore_id_key"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    certification_id: Mapped[Optional[int]] = mapped_column(Integer)
+    is_secondary: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    secondary_to: Mapped[List[int]] = mapped_column(ARRAY(Integer), default=list, server_default=text("'{}'"), nullable=False)
+    certification_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("staff_certifications.id", ondelete="SET NULL"))
     bg_color: Mapped[Optional[str]] = mapped_column(Text)
     border_color: Mapped[Optional[str]] = mapped_column(Text)
+    text_color: Mapped[Optional[str]] = mapped_column(Text)
     optional: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     min_staff_members: Mapped[Optional[int]] = mapped_column(Integer)
+    min_staff_on_sabbatical: Mapped[Optional[int]] = mapped_column(Integer)
+    min_staff_on_half_day: Mapped[Optional[int]] = mapped_column(Integer)
     active_days: Mapped[Optional[List[int]]] = mapped_column(ARRAY(Integer))
     recurrence_type: Mapped[Optional[RecurrenceType]] = mapped_column(SQLEnum(RecurrenceType, name="recurrence_type_enum"))
     recurrence_interval: Mapped[Optional[int]] = mapped_column(Integer)
     recurrence_base_date: Mapped[Optional[date]] = mapped_column(Date)
+    display_order: Mapped[Optional[int]] = mapped_column(Integer)
+    enable_stand_by: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    active_on_sabbatical: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    prefer_day_before_on_call: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    # The Firestore `stations` doc id this row was migrated from (NULL for
+    # stations created through the API) — lets the migration script upsert.
+    firestore_id: Mapped[Optional[str]] = mapped_column(Text)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class StationVersion(Base):
+    """A station's versioned configuration effective from `effective_from`.
+    Insert-only, except that a version no schedule version pins may be
+    replaced in place by a change with the same `effective_from`.
+    `is_retired` marks the final version written when a station is deleted."""
+    __tablename__ = "station_versions"
+    __table_args__ = (
+        UniqueConstraint("station_id", "version", name="station_versions_station_id_version_key"),
+        Index("idx_station_versions_station_id_effective_from", "station_id", "effective_from"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    station_id: Mapped[int] = mapped_column(Integer, ForeignKey("stations.id", ondelete="RESTRICT"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    is_retired: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_secondary: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    secondary_to: Mapped[List[int]] = mapped_column(ARRAY(Integer), default=list, server_default=text("'{}'"), nullable=False)
+    certification_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("staff_certifications.id", ondelete="SET NULL"))
+    optional: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    min_staff_members: Mapped[Optional[int]] = mapped_column(Integer)
+    min_staff_on_sabbatical: Mapped[Optional[int]] = mapped_column(Integer)
+    min_staff_on_half_day: Mapped[Optional[int]] = mapped_column(Integer)
+    active_days: Mapped[Optional[List[int]]] = mapped_column(ARRAY(Integer))
+    recurrence_type: Mapped[Optional[RecurrenceType]] = mapped_column(SQLEnum(RecurrenceType, name="recurrence_type_enum", create_type=False))
+    recurrence_interval: Mapped[Optional[int]] = mapped_column(Integer)
+    recurrence_base_date: Mapped[Optional[date]] = mapped_column(Date)
+    enable_stand_by: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    active_on_sabbatical: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    prefer_day_before_on_call: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class OnCallStationMapping(Base):
+    """Not versioned. Within a unit, each on-call station maps to at most one
+    station; a station can have many on-call stations."""
+    __tablename__ = "on_call_station_mappings"
+    __table_args__ = (
+        UniqueConstraint("unit_id", "on_call_station_id", name="on_call_station_mappings_unit_id_on_call_station_id_key"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    on_call_station_id: Mapped[int] = mapped_column(Integer, ForeignKey("on_call_stations.id", ondelete="CASCADE"), nullable=False)
+    station_id: Mapped[int] = mapped_column(Integer, ForeignKey("stations.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class ConstraintType(Base):
@@ -329,36 +403,101 @@ class StaffMemberSubmission(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
-class ScheduleStaffMember(Base):
-    __tablename__ = "schedule_staff_members"
+class ScheduleVersion(Base):
+    """Insert-only, one row per (unit_id, month, version). Every schedule
+    save inserts a new version row plus a full snapshot of the month in
+    `schedule_stations` / `schedule_assignments` / `schedule_seniors`.
+    The only in-place update is (un)publishing. `constraints_version` and
+    `on_call_version` record which constraints/on-call versions were current
+    when this version was saved."""
+    __tablename__ = "schedule_versions"
+    __table_args__ = (
+        UniqueConstraint("unit_id", "month", "version", name="schedule_versions_unit_id_month_version_key"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
-    schedule_date: Mapped[date] = mapped_column(Date, nullable=False)
-    staff_member_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("staff_members.id", ondelete="CASCADE"), nullable=False)
-    station_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    is_stand_by: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    published_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    constraints_version: Mapped[Optional[int]] = mapped_column(Integer)
+    on_call_version: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+    stations: Mapped[List["ScheduleStation"]] = relationship("ScheduleStation", back_populates="schedule_version")
+    seniors: Mapped[List["ScheduleSenior"]] = relationship("ScheduleSenior", back_populates="schedule_version")
+
+
+class ScheduleVersionStation(Base):
+    """Station versions a schedule version is pinned to — kept at the
+    schedule-version level (not per date). A month can pin several versions
+    of one station (a change effective mid-month)."""
+    __tablename__ = "schedule_version_stations"
+    __table_args__ = (
+        UniqueConstraint("schedule_version_id", "station_version_id", name="schedule_version_stations_version_station_version_key"),
+        Index("idx_schedule_version_stations_station_version_id", "station_version_id"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    schedule_version_id: Mapped[int] = mapped_column(Integer, ForeignKey("schedule_versions.id", ondelete="CASCADE"), nullable=False)
+    station_id: Mapped[int] = mapped_column(Integer, ForeignKey("stations.id", ondelete="RESTRICT"), nullable=False)
+    station_version_id: Mapped[int] = mapped_column(Integer, ForeignKey("station_versions.id", ondelete="RESTRICT"), nullable=False)
+
+    station_version: Mapped["StationVersion"] = relationship("StationVersion")
+
+
+class ScheduleStation(Base):
+    """A station shown on a date in one schedule version — either a
+    configured station (`station_id`) or a custom station added manually to
+    this schedule only (`custom_name`), never both."""
+    __tablename__ = "schedule_stations"
+    __table_args__ = (
+        CheckConstraint("num_nonnulls(station_id, custom_name) = 1", name="schedule_stations_station_or_custom_check"),
+        Index(
+            "ux_schedule_stations_version_date_station",
+            "schedule_version_id", "date", "station_id",
+            unique=True,
+            postgresql_where=text("station_id IS NOT NULL"),
+        ),
+        Index("idx_schedule_stations_version_date", "schedule_version_id", "date"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    schedule_version_id: Mapped[int] = mapped_column(Integer, ForeignKey("schedule_versions.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    station_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("stations.id", ondelete="RESTRICT"))
+    custom_name: Mapped[Optional[str]] = mapped_column(Text)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    schedule_version: Mapped["ScheduleVersion"] = relationship("ScheduleVersion", back_populates="stations")
+    assignments: Mapped[List["ScheduleAssignment"]] = relationship("ScheduleAssignment", back_populates="schedule_station")
+
+
+class ScheduleAssignment(Base):
+    __tablename__ = "schedule_assignments"
+    __table_args__ = (
+        UniqueConstraint("schedule_station_id", "staff_member_id", name="schedule_assignments_station_staff_member_key"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    schedule_station_id: Mapped[int] = mapped_column(Integer, ForeignKey("schedule_stations.id", ondelete="CASCADE"), nullable=False, index=True)
+    staff_member_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("staff_members.id", ondelete="RESTRICT"), nullable=False)
+    is_stand_by: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+
+    schedule_station: Mapped["ScheduleStation"] = relationship("ScheduleStation", back_populates="assignments")
 
 
 class ScheduleSenior(Base):
+    """One senior per date per schedule version."""
     __tablename__ = "schedule_seniors"
+    __table_args__ = (
+        UniqueConstraint("schedule_version_id", "date", name="schedule_seniors_version_date_key"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
-    schedule_date: Mapped[date] = mapped_column(Date, nullable=False)
-    senior_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    schedule_version_id: Mapped[int] = mapped_column(Integer, ForeignKey("schedule_versions.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    senior_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("seniors.id", ondelete="RESTRICT"), nullable=False)
 
-
-class ScheduleVersion(Base):
-    __tablename__ = "schedule_versions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    is_published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    schedule: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
-
-    # store the id of the user who updated this schedule version
-    update_admin_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True)
+    schedule_version: Mapped["ScheduleVersion"] = relationship("ScheduleVersion", back_populates="seniors")
 
 
 class User(Base):

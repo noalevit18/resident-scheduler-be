@@ -19,7 +19,7 @@ def get_seniors(
     current_user: dict = Depends(bind_current_user),
 ):
     user = authz.get_logged_in_user_or_raise(current_user)
-    authz.authorize_unit_view(user, unit_id)
+    authz.authorize_division_view(user, unit_id)
     return service.get_all_seniors(unit_id, include_deleted)
 
 

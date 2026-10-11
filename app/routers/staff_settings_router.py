@@ -5,7 +5,10 @@ from app.schemas.schemas import (
     StaffRotationCreate, StaffRotationUpdate, StaffRotationResponse, StaffSettingsResponse,
 )
 from app.services.staff_settings_service import StaffCertificationService, StaffRotationService, StaffSettingsService
-from app.dependencies import get_certification_service, get_staff_rotation_service, get_staff_settings_service
+from app.services.authorization_service import AuthorizationService
+from app.dependencies import (
+    get_certification_service, get_staff_rotation_service, get_staff_settings_service, get_authorization_service,
+)
 from app.context import bind_current_user
 
 router = APIRouter(prefix="/staff/settings", tags=["staff/settings"])
@@ -16,12 +19,27 @@ router = APIRouter(prefix="/staff/settings", tags=["staff/settings"])
 # ==========================================
 
 @router.get("/certifications", response_model=list[StaffCertificationResponse])
-def get_certifications(unit_id: UUID, service: StaffCertificationService = Depends(get_certification_service)):
+def get_certifications(
+    unit_id: UUID,
+    service: StaffCertificationService = Depends(get_certification_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division_view(user, unit_id)
     return service.get_all_certifications(unit_id)
 
 
 @router.post("/certifications", response_model=StaffCertificationResponse)
-def create_certification(data: StaffCertificationCreate, service: StaffCertificationService = Depends(get_certification_service)):
+def create_certification(
+    data: StaffCertificationCreate,
+    service: StaffCertificationService = Depends(get_certification_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_unit(user, data.unit_id)
+    authz.require_admin_role(user)
     return service.create_certification(data)
 
 
@@ -31,7 +49,12 @@ def update_certification(
     unit_id: UUID,
     update_data: StaffCertificationUpdate,
     service: StaffCertificationService = Depends(get_certification_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
 ):
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_unit(user, unit_id)
+    authz.require_admin_role(user)
     certification_data = update_data.model_dump(exclude_unset=True)
     if not certification_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
@@ -43,7 +66,16 @@ def update_certification(
 
 
 @router.delete("/certifications/{certification_id}")
-def delete_certification(certification_id: int, unit_id: UUID, service: StaffCertificationService = Depends(get_certification_service), _: dict = Depends(bind_current_user)):
+def delete_certification(
+    certification_id: int,
+    unit_id: UUID,
+    service: StaffCertificationService = Depends(get_certification_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_unit(user, unit_id)
+    authz.require_admin_role(user)
     try:
         service.delete_certification(certification_id, unit_id)
         return {"message": "Certification deleted successfully"}
@@ -56,12 +88,27 @@ def delete_certification(certification_id: int, unit_id: UUID, service: StaffCer
 # ==========================================
 
 @router.get("/rotations", response_model=list[StaffRotationResponse])
-def get_staff_rotations(division_id: UUID, service: StaffRotationService = Depends(get_staff_rotation_service)):
+def get_staff_rotations(
+    division_id: UUID,
+    service: StaffRotationService = Depends(get_staff_rotation_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division(user, division_id)
     return service.get_all_rotations(division_id)
 
 
 @router.post("/rotations", response_model=StaffRotationResponse)
-def create_staff_rotation(data: StaffRotationCreate, service: StaffRotationService = Depends(get_staff_rotation_service)):
+def create_staff_rotation(
+    data: StaffRotationCreate,
+    service: StaffRotationService = Depends(get_staff_rotation_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division(user, data.division_id)
+    authz.require_division_admin_role(user)
     return service.create_rotation(data)
 
 
@@ -71,7 +118,12 @@ def update_staff_rotation(
     division_id: UUID,
     update_data: StaffRotationUpdate,
     service: StaffRotationService = Depends(get_staff_rotation_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
 ):
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division(user, division_id)
+    authz.require_division_admin_role(user)
     rotation_data = update_data.model_dump(exclude_unset=True)
     if not rotation_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
@@ -83,7 +135,16 @@ def update_staff_rotation(
 
 
 @router.delete("/rotations/{rotation_id}")
-def delete_staff_rotation(rotation_id: int, division_id: UUID, service: StaffRotationService = Depends(get_staff_rotation_service), _: dict = Depends(bind_current_user)):
+def delete_staff_rotation(
+    rotation_id: int,
+    division_id: UUID,
+    service: StaffRotationService = Depends(get_staff_rotation_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division(user, division_id)
+    authz.require_division_admin_role(user)
     try:
         service.delete_rotation(rotation_id, division_id)
         return {"message": "Staff rotation deleted successfully"}
@@ -96,7 +157,18 @@ def delete_staff_rotation(rotation_id: int, division_id: UUID, service: StaffRot
 # ==========================================
 
 @router.get("", response_model=StaffSettingsResponse)
-def get_all_settings(division_id: UUID, unit_id: UUID, service: StaffSettingsService = Depends(get_staff_settings_service)):
+def get_all_settings(
+    division_id: UUID,
+    unit_id: UUID,
+    service: StaffSettingsService = Depends(get_staff_settings_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    user = authz.get_logged_in_user_or_raise(current_user)
+    # Rotations come from division_id and certifications from unit_id —
+    # both must be within the caller's scope.
+    authz.authorize_division(user, division_id)
+    authz.authorize_division_view(user, unit_id)
     try:
         return service.get_all_settings(division_id, unit_id)
     except ValueError as e:

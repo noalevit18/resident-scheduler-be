@@ -1,6 +1,6 @@
 from datetime import date
 from sqlalchemy.orm import Session
-from app.models.models import SpecialDate
+from app.models.models import Division, SpecialDate, SpecialDateType, Unit
 from app.schemas.schemas import SpecialDateBulkEntry
 from uuid import UUID
 
@@ -16,6 +16,17 @@ class SpecialDateRepository:
             .order_by(SpecialDate.date)
             .all()
         )
+
+    def get_types_for_unit(self, unit_id: UUID, start: date, end: date) -> dict[date, SpecialDateType]:
+        """{date: type} of the unit's account special dates in [start, end)."""
+        rows = (
+            self.db.query(SpecialDate.date, SpecialDate.type)
+            .join(Division, Division.account_id == SpecialDate.account_id)
+            .join(Unit, Unit.division_id == Division.id)
+            .filter(Unit.id == unit_id, SpecialDate.date >= start, SpecialDate.date < end)
+            .all()
+        )
+        return {row.date: row.type for row in rows}
 
     def get_by_date(self, account_id: UUID, date: date):
         return self.db.query(SpecialDate).filter(

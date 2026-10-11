@@ -20,6 +20,14 @@ class SeniorRepository:
             Senior.id == senior_id, Senior.unit_id == unit_id, Senior.is_deleted.is_(False),
         ).first()
 
+    def get_by_ids(self, ids: list[UUID], unit_id: UUID) -> set[UUID]:
+        """Includes soft-deleted seniors — older schedule versions keep
+        referencing them."""
+        if not ids:
+            return set()
+        rows = self.db.query(Senior.id).filter(Senior.id.in_(ids), Senior.unit_id == unit_id).all()
+        return {row[0] for row in rows}
+
     def create(self, data: SeniorCreate, created_by: Optional[UUID]):
         db_obj = Senior(**data.model_dump(), created_by=created_by)
         self.db.add(db_obj)

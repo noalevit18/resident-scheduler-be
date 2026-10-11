@@ -13,6 +13,7 @@ from app.repositories.senior_repository import SeniorRepository
 from app.repositories.on_call_station_repository import OnCallStationRepository
 from app.repositories.on_call_shift_repository import OnCallShiftRepository
 from app.repositories.station_repository import StationRepository
+from app.repositories.schedule_repository import ScheduleRepository
 from app.repositories.unit_repository import UnitRepository
 from app.repositories.division_repository import DivisionRepository
 from app.repositories.user_repository import UserRepository
@@ -48,6 +49,7 @@ def get_senior_repository(db: Session = Depends(get_db)): return SeniorRepositor
 def get_on_call_station_repository(db: Session = Depends(get_db)): return OnCallStationRepository(db)
 def get_on_call_shift_repository(db: Session = Depends(get_db)): return OnCallShiftRepository(db)
 def get_station_repository(db: Session = Depends(get_db)): return StationRepository(db)
+def get_schedule_repository(db: Session = Depends(get_db)): return ScheduleRepository(db)
 def get_unit_repository(db: Session = Depends(get_db)): return UnitRepository(db)
 def get_division_repository(db: Session = Depends(get_db)): return DivisionRepository(db)
 def get_user_repository(db: Session = Depends(get_db)): return UserRepository(db)
@@ -100,8 +102,20 @@ def get_on_call_shift_service(
     submission_repo: StaffMemberSubmissionRepository = Depends(get_staff_member_submission_repository),
     submission_metadata_service: StaffMemberSubmissionMetadataService = Depends(get_staff_member_submission_metadata_service),
 ): return OnCallShiftService(repo, on_call_station_service, staff_service, submission_repo, submission_metadata_service)
-def get_station_service(repo: StationRepository = Depends(get_station_repository)): return StationService(repo)
-def get_schedule_service(): return ScheduleService()
+def get_station_service(
+    repo: StationRepository = Depends(get_station_repository),
+    on_call_station_service: OnCallStationService = Depends(get_on_call_station_service),
+    unit_service: UnitService = Depends(get_unit_service),
+): return StationService(repo, on_call_station_service, unit_service)
+def get_schedule_service(
+    repo: ScheduleRepository = Depends(get_schedule_repository),
+    station_service: StationService = Depends(get_station_service),
+    staff_service: StaffService = Depends(get_staff_service),
+    senior_service: SeniorService = Depends(get_senior_service),
+    constraint_repo: ConstraintRepository = Depends(get_constraint_repository),
+    on_call_shift_repo: OnCallShiftRepository = Depends(get_on_call_shift_repository),
+    special_date_repo: SpecialDateRepository = Depends(get_special_date_repository),
+): return ScheduleService(repo, station_service, staff_service, senior_service, constraint_repo, on_call_shift_repo, special_date_repo)
 def get_metadata_service(repo: MetadataRepository = Depends(get_metadata_repository)): return MetadataService(repo)
 def get_certification_service(repo: StaffCertificationRepository = Depends(get_certification_repository)): return StaffCertificationService(repo)
 def get_staff_rotation_service(repo: StaffRotationRepository = Depends(get_staff_rotation_repository)): return StaffRotationService(repo)
