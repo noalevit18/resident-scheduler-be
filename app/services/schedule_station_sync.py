@@ -13,8 +13,8 @@ from app.models.models import RecurrenceType, SpecialDateType, StationVersion
 from app.repositories.station_repository import version_in_effect
 from app.schemas.schemas import ScheduleDayEntry, ScheduleStationEntry
 
+FRIDAY = 5
 SATURDAY = 6
-MONDAY = 1
 MIN_RECURRENCE_INTERVAL = 2
 
 
@@ -34,12 +34,15 @@ def is_version_active_on_date(
     if version.is_retired or version.recurrence_type is None:
         return False
 
-    special_type = special_dates.get(day)
+    dow = js_day_of_week(day)
+    # A special date on a weekday follows the station's sabbatical / half-day
+    # flag; on Friday and Saturday the station's own weekend days still decide.
+    special_type = None if dow in (FRIDAY, SATURDAY) else special_dates.get(day)
     if special_type == SpecialDateType.SABBATICAL:
         return version.active_on_sabbatical
+    if special_type == SpecialDateType.PARTIAL_DAY:
+        return version.active_on_half_day
 
-    natural_dow = js_day_of_week(day)
-    dow = MONDAY if special_type == SpecialDateType.PARTIAL_DAY and natural_dow == SATURDAY else natural_dow
     active_days = version.active_days or []
     interval = max(MIN_RECURRENCE_INTERVAL, version.recurrence_interval or MIN_RECURRENCE_INTERVAL)
 
