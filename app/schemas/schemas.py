@@ -324,6 +324,7 @@ class Station(SnakeCaseModel):
     display_order: Optional[int] = None
     enable_stand_by: bool = False
     active_on_sabbatical: bool = False
+    active_on_half_day: bool = False
     prefer_day_before_on_call: bool = False
 
 
@@ -361,6 +362,7 @@ class StationUpdate(SnakeCaseModel):
     display_order: Optional[int] = None
     enable_stand_by: Optional[bool] = None
     active_on_sabbatical: Optional[bool] = None
+    active_on_half_day: Optional[bool] = None
     prefer_day_before_on_call: Optional[bool] = None
     on_call_station_ids: Optional[List[int]] = None
     effective_from: Optional[date] = None

@@ -20,7 +20,8 @@ GLOBAL_STATION_FIELDS = ("name", "bg_color", "border_color", "text_color", "disp
 VERSIONED_STATION_FIELDS = (
     "is_default", "is_secondary", "secondary_to", "certification_id", "optional", "min_staff_members", "min_staff_on_sabbatical",
     "min_staff_on_half_day", "active_days", "recurrence_type",
-    "recurrence_interval", "recurrence_base_date", "enable_stand_by", "active_on_sabbatical", "prefer_day_before_on_call",
+    "recurrence_interval", "recurrence_base_date", "enable_stand_by", "active_on_sabbatical", "active_on_half_day",
+    "prefer_day_before_on_call",
 )
 # The versioned fields deciding which days a station is active; a change to
 # any of them can't take effect in a past month.

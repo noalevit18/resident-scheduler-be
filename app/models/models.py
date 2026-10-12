@@ -199,6 +199,7 @@ class Station(Base):
     display_order: Mapped[Optional[int]] = mapped_column(Integer)
     enable_stand_by: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     active_on_sabbatical: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    active_on_half_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     prefer_day_before_on_call: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     # The Firestore `stations` doc id this row was migrated from (NULL for
     # stations created through the API) — lets the migration script upsert.
@@ -239,6 +240,7 @@ class StationVersion(Base):
     recurrence_base_date: Mapped[Optional[date]] = mapped_column(Date)
     enable_stand_by: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     active_on_sabbatical: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    active_on_half_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     prefer_day_before_on_call: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
