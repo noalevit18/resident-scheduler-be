@@ -43,6 +43,10 @@ def is_version_active_on_date(
     if special_type == SpecialDateType.PARTIAL_DAY:
         return version.active_on_half_day
 
+    # The base date is the day the recurrence starts from (none: a weekly station is always active).
+    if version.recurrence_base_date is not None and day < version.recurrence_base_date:
+        return False
+
     active_days = version.active_days or []
     interval = max(MIN_RECURRENCE_INTERVAL, version.recurrence_interval or MIN_RECURRENCE_INTERVAL)
 
@@ -51,7 +55,7 @@ def is_version_active_on_date(
     if version.recurrence_type == RecurrenceType.EVERY_X_DAYS:
         if version.recurrence_base_date is None:
             return False
-        if dow == SATURDAY and SATURDAY not in active_days:
+        if dow in (FRIDAY, SATURDAY) and dow not in active_days:
             return False
         return (day - version.recurrence_base_date).days % interval == 0
     if version.recurrence_type == RecurrenceType.EVERY_X_WEEKS:
