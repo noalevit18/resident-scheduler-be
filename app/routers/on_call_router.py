@@ -59,7 +59,7 @@ def get_on_call_shifts(
 ):
     _validate_month(month)
     user = authz.get_logged_in_user_or_raise(current_user)
-    authz.authorize_unit_view(user, unit_id)
+    authz.authorize_division_view(user, unit_id)
     return service.get_monthly(unit_id, month, version)
 
 

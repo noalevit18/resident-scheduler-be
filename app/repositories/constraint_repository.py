@@ -52,6 +52,10 @@ class ConstraintRepository:
             query = query.with_for_update()
         return query.first()
 
+    def get_current_version(self, unit_id: UUID, month: str) -> Optional[int]:
+        version_row = self._get_version_row(unit_id, month)
+        return version_row.version if version_row else None
+
     def get_by_month(self, unit_id: UUID, month: str) -> List[Constraint]:
         version_row = self._get_version_row(unit_id, month)
         if not version_row:
