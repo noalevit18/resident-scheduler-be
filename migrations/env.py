@@ -3,8 +3,8 @@ import os
 import sys
 
 from dotenv import load_dotenv
-from sqlalchemy import engine_from_config, create_engine
-from sqlalchemy import pool
+from sqlalchemy import create_engine
+from urllib.parse import quote_plus
 
 # Add the project root (resident-scheduler-be) to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -20,7 +20,7 @@ env_path = os.path.join(os.path.dirname(__file__), '..', 'app', '.env')
 
 load_dotenv(env_path)
 USER = os.getenv("POSTGRES_USER")
-PASSWORD = os.getenv("POSTGRES_PASSWORD")
+PASSWORD = quote_plus(os.getenv("POSTGRES_PASSWORD"))
 HOST = os.getenv("POSTGRES_HOST")
 PORT = os.getenv("POSTGRES_PORT")
 DB_NAME = os.getenv("POSTGRES_DB_NAME")

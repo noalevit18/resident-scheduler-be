@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from urllib.parse import quote_plus
 import os
 from dotenv import load_dotenv
 
@@ -7,19 +8,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 USER = os.getenv("POSTGRES_USER")
-PASSWORD = os.getenv("POSTGRES_PASSWORD")
+PASSWORD = quote_plus(os.getenv("POSTGRES_PASSWORD"))
 HOST = os.getenv("POSTGRES_HOST")
 PORT = os.getenv("POSTGRES_PORT")
 DBNAME = os.getenv("POSTGRES_DB_NAME")
 
 DATABASE_URL = f"postgresql+psycopg://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
 
-
-
 engine = create_engine(
     DATABASE_URL,
     connect_args={"prepare_threshold": None},
-    pool_pre_ping=True
+    pool_pre_ping=True,      # Detects and recycles closed/dropped idle connections
+    pool_size=10,            # Permanent connections in the pool
+    max_overflow=20,         # Additional temporary connections allowed under high load
+    pool_recycle=1800,       # Recycles connections every 30 mins to avoid stale SSL drops
 )
 
 # expire_on_commit=False: keep ORM objects' attributes populated after commit
