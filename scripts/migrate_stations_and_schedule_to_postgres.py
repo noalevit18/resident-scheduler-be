@@ -77,12 +77,21 @@ Anything that can't be resolved is skipped and listed in the "needs manual
 review" report at the end — never guessed at.
 
 Part 1 is idempotent. Part 2 is not: re-running it for real appends new
-versions on top of the already-migrated ones (reads return the latest, so the
-result looks the same, but history gets duplicated) — same caveat as
-migrate_on_call_to_postgres.py.
+versions on top of the already-migrated ones — unless run with `--resume`.
+
+`--resume` continues an interrupted run (e.g. a Cloud Run timeout). Snapshots
+are always processed in the same order, so the k-th version this run computes
+for a month is the k-th version the earlier run saved. Every snapshot is
+still read and processed (keeping the "skip unchanged month" state exact),
+but a version whose number is already saved for its month is skipped. Each
+version is saved in a single transaction, so none is ever half-written.
+Before skipping past a month's last saved version, its stored content is
+compared with what this run computes; on a mismatch (Firestore edited since,
+or a retried run left duplicates) the script stops — then delete the unit's
+schedule_versions and run without --resume.
 
 Usage:
-    python -m scripts.migrate_stations_and_schedule_to_postgres --unit-id <UUID> [--dry-run]
+    python -m scripts.migrate_stations_and_schedule_to_postgres --unit-id <UUID> [--dry-run] [--resume]
 
 `--dry-run` runs every Firestore read and DB lookup, stages the station
 upserts (to get ids) and rolls everything back at the end; no schedule
@@ -106,7 +115,7 @@ sys.path.insert(0, ".")
 
 from app.database import SessionLocal  # noqa: E402
 from app.models.models import (  # noqa: E402
-    OnCallStation, OnCallStationMapping, RecurrenceType, Senior, StaffCertification, StaffMember,
+    OnCallStation, OnCallStationMapping, RecurrenceType, ScheduleVersion, Senior, StaffCertification, StaffMember,
     Station, Unit, User,
 )
 from app.repositories.schedule_repository import ScheduleRepository  # noqa: E402
@@ -431,6 +440,9 @@ class ScheduleContext:
     senior_ids: set
     report: list
     user_cache: dict = field(default_factory=dict)
+    # {station_id: [StationVersion]} for the unit; loaded once, reset when a
+    # placeholder station is created (the only thing that changes it).
+    unit_versions: Optional[dict] = None
 
 
 def resolve_user_id(ctx: ScheduleContext, division_id: UUID, saved_by: Any, label: str) -> Optional[UUID]:
@@ -618,7 +630,10 @@ def build_day(ctx: ScheduleContext, day: date, date_key: str, data: dict, senior
             station_staff_ids.add(staff_id)
             assignments.append(assignment)
         stand_by_given |= {str(a.staff_member_id) for a in assignments if a.is_stand_by}
+        is_new_placeholder = not custom_name and key not in ctx.stations
         station_id = None if custom_name else ensure_placeholder_station(ctx.db, ctx.unit_id, key, ctx.stations, ctx.report).id
+        if is_new_placeholder:
+            ctx.unit_versions = None
         if station_id is not None and station_id in station_by_id:
             # Two Firestore keys resolving to the same Postgres station: one
             # schedule station per (date, station_id) — merge the assignments.
@@ -713,18 +728,70 @@ def migration_pins(ctx: ScheduleContext, month: str, days: list) -> list:
     version in effect during the month, for every station shown or active."""
     start, end = month_bounds(month)
     shown = {s.station_id for d in days for s in d.stations if s.station_id is not None}
-    in_month = {
-        sid: versions_in_month(versions, start, end)
-        for sid, versions in StationRepository(ctx.db).get_unit_versions(ctx.unit_id).items()
-    }
+    if ctx.unit_versions is None:
+        ctx.unit_versions = StationRepository(ctx.db).get_unit_versions(ctx.unit_id)
+    in_month = {sid: versions_in_month(versions, start, end) for sid, versions in ctx.unit_versions.items()}
     considered = shown | {sid for sid, versions in in_month.items() if any(not v.is_retired for v in versions)}
     return [v for sid in considered for v in in_month.get(sid, [])]
 
 
-def migrate_schedule(fs, ctx: ScheduleContext, division_id: UUID, dry_run: bool) -> None:
+def existing_version_counts(ctx: ScheduleContext) -> dict:
+    """{month: number of schedule versions already in Postgres}. Resuming
+    relies on versions 1..N being exactly those of an earlier (interrupted)
+    run of this script, so the numbers must have no gaps."""
+    rows = (
+        ctx.db.query(ScheduleVersion.month, func.count(ScheduleVersion.id), func.max(ScheduleVersion.version))
+        .filter(ScheduleVersion.unit_id == ctx.unit_id)
+        .group_by(ScheduleVersion.month)
+        .all()
+    )
+    for month, count, max_version in rows:
+        if count != max_version:
+            sys.exit(f"ERROR: cannot resume — {month} has {count} versions but max version {max_version} (gaps). "
+                     f"Delete this unit's schedule_versions and run without --resume.")
+    return {month: count for month, count, _ in rows}
+
+
+def stored_month_fingerprint(repository: ScheduleRepository, version_row: ScheduleVersion) -> tuple:
+    """month_fingerprint of a version already saved in Postgres."""
+    stations_by_date: dict = defaultdict(list)
+    for row in repository.get_stations(version_row.id):
+        stations_by_date[row.date].append(row)
+    senior_by_date = {row.date: row.senior_id for row in repository.get_seniors(version_row.id)}
+    return tuple(
+        (
+            day, senior_by_date.get(day),
+            tuple(
+                (s.station_id, s.custom_name, s.display_order,
+                 tuple(sorted((str(a.staff_member_id), a.is_stand_by) for a in s.assignments)))
+                for s in stations_by_date.get(day, [])
+            ),
+        )
+        for day in sorted(set(stations_by_date) | set(senior_by_date))
+    )
+
+
+def verify_resume_point(
+    ctx: ScheduleContext, repository: ScheduleRepository, month: str, version: int, days: list, is_published: bool,
+) -> None:
+    """Before skipping past a month's last saved version, make sure it is
+    exactly what this run computes for that version number — otherwise the
+    Firestore data or the earlier run differs, and resuming would be wrong."""
+    row = repository.get_version_row(ctx.unit_id, month, version)
+    if row is None or row.is_published != is_published or stored_month_fingerprint(repository, row) != month_fingerprint(days):
+        sys.exit(f"ERROR: cannot resume — saved {month} version {version} doesn't match what this run computes "
+                 f"(Firestore changed since, or the earlier run was retried). Delete this unit's schedule_versions "
+                 f"and run without --resume.")
+
+
+def migrate_schedule(fs, ctx: ScheduleContext, division_id: UUID, dry_run: bool, resume: bool = False) -> None:
     repository = ScheduleRepository(ctx.db)
     last_by_month: dict = {}  # month -> (fingerprint, is_published)
     counts: dict = defaultdict(int)
+    existing = existing_version_counts(ctx) if resume else {}
+    if resume:
+        print(f"Resuming: versions already saved per month: {dict(sorted(existing.items())) or '(none)'}")
+    skipped = 0
 
     for snapshot in collect_snapshots(fs, ctx, division_id):
         for month, days in sorted(split_snapshot_by_month(ctx, snapshot).items()):
@@ -734,6 +801,12 @@ def migrate_schedule(fs, ctx: ScheduleContext, division_id: UUID, dry_run: bool)
                 continue
             last_by_month[month] = (fingerprint, snapshot.is_published)
             counts[month] += 1
+            if counts[month] <= existing.get(month, 0):
+                # Saved by the interrupted run; verify the last one, skip all.
+                if counts[month] == existing[month]:
+                    verify_resume_point(ctx, repository, month, counts[month], days, snapshot.is_published)
+                skipped += 1
+                continue
             print(f"  [{snapshot.label}] month={month} -> version {counts[month]} "
                   f"({len(days)} days, published={snapshot.is_published})")
             if dry_run:
@@ -744,6 +817,12 @@ def migrate_schedule(fs, ctx: ScheduleContext, division_id: UUID, dry_run: bool)
                 snapshot.constraints_version, snapshot.on_call_version, created_at=snapshot.created_at,
             )
 
+    if resume:
+        print(f"\nSkipped {skipped} versions already saved by the earlier run.")
+        for month, count in sorted(existing.items()):
+            if count > counts.get(month, 0):
+                ctx.report.append(f"RESUME: {month} has {count} saved versions but this run computes only "
+                                  f"{counts.get(month, 0)} — extra versions in Postgres (duplicates from a retry?)")
     print("\nVersions per month: " + ", ".join(f"{m}={c}" for m, c in sorted(counts.items())))
 
 
@@ -764,6 +843,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--unit-id", required=True, help="Target unit UUID to migrate stations and schedule into")
     parser.add_argument("--dry-run", action="store_true", help="Report only, no writes")
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Continue an interrupted run: skip the schedule versions already saved for this unit",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
@@ -778,7 +861,7 @@ def main() -> None:
         print(f"ERROR: unit {unit_id} not found")
         sys.exit(1)
 
-    print(f"Migrating stations + schedule into unit={unit_id} — dry_run={dry_run}")
+    print(f"Migrating stations + schedule into unit={unit_id} — dry_run={dry_run} resume={args.resume}")
     report: list = []
 
     print("\n--- Part 1: stations ---")
@@ -799,7 +882,7 @@ def main() -> None:
         staff_ids={str(r[0]) for r in db.query(StaffMember.id).filter(StaffMember.unit_id == unit_id).all()},
         senior_ids={str(r[0]) for r in db.query(Senior.id).filter(Senior.unit_id == unit_id).all()},
     )
-    migrate_schedule(fs, ctx, unit.division_id, dry_run)
+    migrate_schedule(fs, ctx, unit.division_id, dry_run, resume=args.resume)
 
     if dry_run:
         db.rollback()

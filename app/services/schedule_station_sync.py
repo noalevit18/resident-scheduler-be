@@ -33,6 +33,9 @@ def is_version_active_on_date(
     """Whether a station version recurs on `day`. Manual and retired versions never do."""
     if version.is_retired or version.recurrence_type is None:
         return False
+    # The base date is the day the recurrence starts from (none: a weekly station is always active).
+    if version.recurrence_base_date is not None and day < version.recurrence_base_date:
+        return False
 
     dow = js_day_of_week(day)
     # A special date on a weekday follows the station's sabbatical / half-day
@@ -42,10 +45,6 @@ def is_version_active_on_date(
         return version.active_on_sabbatical
     if special_type == SpecialDateType.PARTIAL_DAY:
         return version.active_on_half_day
-
-    # The base date is the day the recurrence starts from (none: a weekly station is always active).
-    if version.recurrence_base_date is not None and day < version.recurrence_base_date:
-        return False
 
     active_days = version.active_days or []
     interval = max(MIN_RECURRENCE_INTERVAL, version.recurrence_interval or MIN_RECURRENCE_INTERVAL)
