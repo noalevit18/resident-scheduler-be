@@ -60,6 +60,7 @@ def get_special_date_repository(db: Session = Depends(get_db)): return SpecialDa
 
 # --- Service Factories     ---
 def get_constraint_type_service(repo: ConstraintTypeRepository = Depends(get_constraint_type_repository)): return ConstraintTypeService(repo)
+def get_special_date_service(repo: SpecialDateRepository = Depends(get_special_date_repository)): return SpecialDateService(repo)
 def get_unit_service(repo: UnitRepository = Depends(get_unit_repository)): return UnitService(repo)
 def get_division_service(repo: DivisionRepository = Depends(get_division_repository)): return DivisionService(repo)
 def get_user_service(
@@ -80,7 +81,8 @@ def get_authorization_service(
 def get_staff_member_submission_metadata_service(
     repo: StaffMemberSubmissionMetadataRepository = Depends(get_staff_member_submission_metadata_repository),
     user_service: UserService = Depends(get_user_service),
-): return StaffMemberSubmissionMetadataService(repo, user_service)
+    submission_repo: StaffMemberSubmissionRepository = Depends(get_staff_member_submission_repository),
+): return StaffMemberSubmissionMetadataService(repo, user_service, submission_repo)
 def get_constraint_service(
     repo: ConstraintRepository = Depends(get_constraint_repository),
     submission_repo: StaffMemberSubmissionRepository = Depends(get_staff_member_submission_repository),
@@ -92,7 +94,11 @@ def get_staff_member_submission_service(
     repo: StaffMemberSubmissionRepository = Depends(get_staff_member_submission_repository),
     submission_metadata_service: StaffMemberSubmissionMetadataService = Depends(get_staff_member_submission_metadata_service),
     staff_service: StaffService = Depends(get_staff_service),
-): return StaffMemberSubmissionService(repo, submission_metadata_service, staff_service)
+    special_date_service: SpecialDateService = Depends(get_special_date_service),
+    constraint_type_service: ConstraintTypeService = Depends(get_constraint_type_service),
+): return StaffMemberSubmissionService(
+    repo, submission_metadata_service, staff_service, special_date_service, constraint_type_service,
+)
 def get_senior_service(repo: SeniorRepository = Depends(get_senior_repository)): return SeniorService(repo)
 def get_on_call_station_service(repo: OnCallStationRepository = Depends(get_on_call_station_repository)): return OnCallStationService(repo)
 def get_on_call_shift_service(
@@ -121,4 +127,3 @@ def get_certification_service(repo: StaffCertificationRepository = Depends(get_c
 def get_staff_rotation_service(repo: StaffRotationRepository = Depends(get_staff_rotation_repository)): return StaffRotationService(repo)
 def get_staff_settings_service(certification_service: StaffCertificationService = Depends(get_certification_service),
                                rotation_service: StaffRotationService = Depends(get_staff_rotation_service)): return StaffSettingsService(certification_service, rotation_service)
-def get_special_date_service(repo: SpecialDateRepository = Depends(get_special_date_repository)): return SpecialDateService(repo)

@@ -3,8 +3,9 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from app.models.models import SubmissionFeature
+from app.models.models import FridayMode, SubmissionFeature
 from app.repositories.staff_member_submission_metadata_repository import StaffMemberSubmissionMetadataRepository
+from app.repositories.staff_member_submission_repository import StaffMemberSubmissionRepository
 from app.services.user_service import UserService
 from app.schemas.schemas import SubmissionWindowUpdate
 from app.context import get_current_user_label
@@ -26,21 +27,40 @@ class StaffMemberSubmissionMetadataService:
     only when marking a pull, so each feature's pull is tracked
     independently within the same row."""
 
-    def __init__(self, repository: StaffMemberSubmissionMetadataRepository, user_service: UserService):
+    def __init__(
+        self,
+        repository: StaffMemberSubmissionMetadataRepository,
+        user_service: UserService,
+        submission_repository: StaffMemberSubmissionRepository,
+    ):
         self.repository = repository
         self.user_service = user_service
+        self.submission_repository = submission_repository
 
     def get(self, unit_id: UUID, month: str):
         return self.repository.get_by_unit_month(unit_id, month)
 
     def upsert(self, data: SubmissionWindowUpdate, current_user: dict):
         updated_by = self.user_service.get_logged_in_user_id(current_user)
-        row = self.repository.upsert(data.unit_id, data.month, data.start_time, data.end_time, updated_by)
+        if data.friday_mode is not None and data.friday_mode.value != self.get_friday_mode(data.unit_id, data.month).value:
+            # Switching modes mid-month would mix ranks with want/prefer-not submissions.
+            if self.submission_repository.get_submitted_staff_ids(data.unit_id, data.month):
+                raise SubmissionWindowError(
+                    "friday_mode_locked", "The Friday mode can't change once members have submitted for this month",
+                )
+        row = self.repository.upsert(
+            data.unit_id, data.month, data.start_time, data.end_time, updated_by,
+            FridayMode(data.friday_mode.value) if data.friday_mode is not None else None,
+        )
         logger.info(
-            "Updated submission window (unit_id=%s, month=%s, start=%s, end=%s) by %s",
-            data.unit_id, data.month, data.start_time, data.end_time, get_current_user_label(),
+            "Updated submission window (unit_id=%s, month=%s, start=%s, end=%s, friday_mode=%s) by %s",
+            data.unit_id, data.month, data.start_time, data.end_time, data.friday_mode, get_current_user_label(),
         )
         return row
+
+    def get_friday_mode(self, unit_id: UUID, month: str) -> FridayMode:
+        row = self.repository.get_by_unit_month(unit_id, month)
+        return row.friday_mode if row else FridayMode.PREFERENCE
 
     def clear_window(self, unit_id: UUID, month: str) -> bool:
         cleared = self.repository.clear_window(unit_id, month)

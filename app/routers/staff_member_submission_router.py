@@ -114,7 +114,10 @@ def update_staff_member_submission_metadata(
     user = authz.get_logged_in_user_or_raise(current_user)
     authz.authorize_unit(user, data.unit_id)
     authz.require_admin_role(user)
-    service.upsert(data, current_user)
+    try:
+        service.upsert(data, current_user)
+    except SubmissionWindowError as e:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"error": e.code, "message": e.message})
 
 
 @router.delete("/metadata", status_code=status.HTTP_204_NO_CONTENT)
