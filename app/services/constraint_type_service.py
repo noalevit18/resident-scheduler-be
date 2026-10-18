@@ -23,6 +23,9 @@ class ConstraintTypeService:
     def get_existing_ids(self, ids: list[int], account_id: UUID) -> set[int]:
         return self.repository.get_existing_ids(ids, account_id)
 
+    def get_preferences_by_ids(self, ids: list[int]) -> dict[int, int]:
+        return self.repository.get_preferences_by_ids(ids)
+
     def create(self, data: ConstraintTypeCreate):
         constraint_type = self.repository.create(data)
         logger.info("Created constraint type %s (account_id=%s) by %s", constraint_type.name, constraint_type.account_id, get_current_user_label())

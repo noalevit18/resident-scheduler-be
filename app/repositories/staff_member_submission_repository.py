@@ -72,11 +72,13 @@ class StaffMemberSubmissionRepository:
                 row.constraint_type_id = entry.constraint_type_id
                 row.on_call_station_id = entry.on_call_station_id
                 row.comment = entry.comment or None
+                row.rank = entry.rank
             else:
                 row = StaffMemberSubmission(
                     unit_id=unit_id, staff_member_id=staff_member_id, month=month,
                     date=entry.date, constraint_type_id=entry.constraint_type_id,
                     on_call_station_id=entry.on_call_station_id, comment=entry.comment or None,
+                    rank=entry.rank,
                 )
                 self.db.add(row)
                 rows_by_date[entry.date] = row

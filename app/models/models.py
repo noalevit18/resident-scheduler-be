@@ -6,6 +6,7 @@ from typing import List, Optional
 from sqlalchemy import (
     Index,
     Integer,
+    SmallInteger,
     Text,
     Boolean,
     DateTime,
@@ -53,6 +54,16 @@ class SpecialDateType(str, enum.Enum):
 class SubmissionFeature(str, enum.Enum):
     CONSTRAINTS = "constraints"
     ON_CALL = "on_call"
+
+
+class ConstraintTypeKind(str, enum.Enum):
+    BLOCKING = "blocking"
+    PREFERENCE = "preference"
+
+
+class FridayMode(str, enum.Enum):
+    PREFERENCE = "preference"
+    RANKING = "ranking"
 
 
 class Account(Base):
@@ -266,7 +277,11 @@ class ConstraintType(Base):
     account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     color: Mapped[Optional[dict]] = mapped_column(JSONB)
-    is_hard: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    kind: Mapped[ConstraintTypeKind] = mapped_column(
+        SQLEnum(ConstraintTypeKind, name="constraint_type_kind"), default=ConstraintTypeKind.BLOCKING, nullable=False,
+    )
+    # Preference scale of a PREFERENCE type: 1 = want, 0 = informational, -1 = prefer not.
+    preference: Mapped[int] = mapped_column(SmallInteger, default=0, server_default=text("0"), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -294,13 +309,23 @@ class Constraint(Base):
     __table_args__ = (
         UniqueConstraint("unit_id", "type_id", "date", "version", name="constraints_unit_id_type_id_date_version_key"),
         Index("idx_constraints_unit_id_date_version", "unit_id", "date", "version"),
+        # The Friday-rank row of a date (type_id IS NULL) — at most one per version.
+        Index(
+            "ix_constraints_rank_row_unique",
+            "unit_id", "date", "version",
+            unique=True,
+            postgresql_where=text("type_id IS NULL"),
+        ),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
-    type_id: Mapped[int] = mapped_column(Integer, ForeignKey("constraint_types.id", ondelete="RESTRICT"), nullable=False)
+    # NULL marks the date's Friday-rank row, whose ranks live in staff_member_ranks.
+    type_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("constraint_types.id", ondelete="RESTRICT"))
     date: Mapped[date] = mapped_column(Date, nullable=False)
     staff_member_ids: Mapped[List[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), default=list, server_default="{}", nullable=False)
     submitted_staff_member_ids: Mapped[List[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), default=list, server_default="{}", nullable=False)
+    # {"<staff_member_id str>": <rank int>} — only on the Friday-rank row (type_id IS NULL).
+    staff_member_ranks: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
@@ -369,6 +394,10 @@ class StaffMemberSubmissionMetadata(Base):
     end_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
     pull_information: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
+    # How members express Friday wishes this month: want / prefer-not types, or a 1..N ranking.
+    friday_mode: Mapped[FridayMode] = mapped_column(
+        SQLEnum(FridayMode, name="friday_mode"), default=FridayMode.PREFERENCE, server_default="PREFERENCE", nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -400,6 +429,8 @@ class StaffMemberSubmission(Base):
     constraint_type_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("constraint_types.id", ondelete="CASCADE"))
     on_call_station_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("on_call_stations.id", ondelete="CASCADE"))
     comment: Mapped[Optional[str]] = mapped_column(Text)
+    # The member's Friday rank (1 = most wanted) — only with constraint_type_id NULL, in ranking mode.
+    rank: Mapped[Optional[int]] = mapped_column(SmallInteger)
     submitted_empty: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

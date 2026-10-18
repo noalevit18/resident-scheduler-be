@@ -66,6 +66,19 @@ class SubmissionFeature(str, enum.Enum):
     on_call = "on_call"
 
 
+class ConstraintTypeKind(str, enum.Enum):
+    blocking = "blocking"
+    preference = "preference"
+
+
+class FridayMode(str, enum.Enum):
+    preference = "preference"
+    ranking = "ranking"
+
+
+MAX_FRIDAY_RANK = 5
+
+
 # ==========================================
 # ACCOUNT SCHEMAS
 # ==========================================
@@ -551,8 +564,15 @@ class ConstraintType(SnakeCaseModel):
     account_id: UUID
     name: str = Field(..., min_length=1, max_length=100)
     color: ConstraintTypeColor
-    is_hard: bool = False
+    kind: ConstraintTypeKind = ConstraintTypeKind.blocking
+    preference: int = Field(0, ge=-1, le=1)
     created_at: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def _preference_only_on_preference_kind(self):
+        if self.kind != ConstraintTypeKind.preference and self.preference != 0:
+            raise ValueError("Only a preference constraint type can carry a preference")
+        return self
 
 
 class ConstraintTypeCreate(ConstraintType):
@@ -562,7 +582,8 @@ class ConstraintTypeCreate(ConstraintType):
 class ConstraintTypeUpdate(SnakeCaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     color: Optional[ConstraintTypeColor] = None
-    is_hard: Optional[bool] = None
+    kind: Optional[ConstraintTypeKind] = None
+    preference: Optional[int] = Field(None, ge=-1, le=1)
 
 
 class ConstraintTypeResponse(ConstraintType):
@@ -610,9 +631,21 @@ class SpecialDatesBulkUpdate(SnakeCaseModel):
 # ==========================================
 
 class ConstraintEntry(SnakeCaseModel):
-    type_id: int
+    # None marks the date's Friday-rank entry, whose ranks are in staff_member_ranks.
+    type_id: Optional[int] = None
     date: date
     staff_member_ids: List[UUID] = Field(default_factory=list)
+    staff_member_ranks: Dict[UUID, int] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _ranks_only_on_rank_entry(self):
+        if self.type_id is not None and self.staff_member_ranks:
+            raise ValueError("Ranks are only allowed on the Friday-rank entry (type_id null)")
+        if not set(self.staff_member_ranks) <= set(self.staff_member_ids):
+            raise ValueError("Every ranked staff member must be listed in staff_member_ids")
+        if any(rank < 1 or rank > MAX_FRIDAY_RANK for rank in self.staff_member_ranks.values()):
+            raise ValueError(f"Ranks must be between 1 and {MAX_FRIDAY_RANK}")
+        return self
 
 
 class MonthlyConstraintsUpdate(SnakeCaseModel):
@@ -624,10 +657,11 @@ class ConstraintResponse(SnakeCaseModel):
 
     id: int
     unit_id: UUID
-    type_id: int
+    type_id: Optional[int] = None
     date: date
     staff_member_ids: List[UUID]
     submitted_staff_member_ids: List[UUID] = Field(default_factory=list)
+    staff_member_ranks: Dict[UUID, int] = Field(default_factory=dict)
     version: int
     created_at: datetime
     created_by: Optional[UUID] = None
@@ -671,6 +705,8 @@ class SubmissionWindowUpdate(SnakeCaseModel):
     month: str
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
+    # None keeps the month's current Friday mode.
+    friday_mode: Optional[FridayMode] = None
 
 
 class PullInformationEntry(SnakeCaseModel):
@@ -699,6 +735,7 @@ class SubmissionWindowResponse(SnakeCaseModel):
     end_time: Optional[datetime] = None
     updated_by: Optional[UUID] = None
     pull_information: Dict[SubmissionFeature, PullInformationEntry] = {}
+    friday_mode: FridayMode = FridayMode.preference
     created_at: datetime
     updated_at: datetime
 
@@ -712,6 +749,13 @@ class StaffMemberSubmissionEntry(SnakeCaseModel):
     constraint_type_id: Optional[int] = None
     on_call_station_id: Optional[int] = None
     comment: Optional[str] = Field(None, max_length=1024)
+    rank: Optional[int] = Field(None, ge=1, le=MAX_FRIDAY_RANK)
+
+    @model_validator(mode="after")
+    def _rank_without_type(self):
+        if self.rank is not None and (self.date is None or self.constraint_type_id is not None):
+            raise ValueError("A Friday rank needs a date and no constraint type")
+        return self
 
 
 class MemberMonthlySubmissionUpdate(SnakeCaseModel):
@@ -744,6 +788,7 @@ class StaffMemberSubmissionResponse(SnakeCaseModel):
     constraint_type_id: Optional[int] = None
     on_call_station_id: Optional[int] = None
     comment: Optional[str] = None
+    rank: Optional[int] = None
     submitted_empty: bool = False
     created_at: datetime
     updated_at: datetime

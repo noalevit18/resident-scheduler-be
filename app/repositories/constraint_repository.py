@@ -150,6 +150,7 @@ class ConstraintRepository:
                     unit_id=unit_id, type_id=r.type_id, date=r.date,
                     staff_member_ids=r.staff_member_ids,
                     submitted_staff_member_ids=r.submitted_staff_member_ids,
+                    staff_member_ranks=r.staff_member_ranks,
                     version=next_version, created_by=created_by,
                 )
                 for r in carry_forward
@@ -168,6 +169,7 @@ class ConstraintRepository:
                     submitted_staff_member_ids=submitted_staff_member_ids_by_key.get(
                         (e.type_id, e.date), prior_submitted_ids(e.type_id, e.date),
                     ),
+                    staff_member_ranks={str(staff_id): rank for staff_id, rank in e.staff_member_ranks.items()},
                     version=next_version, created_by=created_by,
                 )
                 for e in entries
