@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app.models.models import ConstraintType
+from app.models.models import ConstraintType, ConstraintTypeKind
 from app.schemas.schemas import ConstraintTypeCreate, ConstraintTypeUpdate
 from uuid import UUID
 
@@ -17,6 +17,13 @@ class ConstraintTypeRepository:
         return self.db.query(ConstraintType).filter(
             ConstraintType.id == c_id, ConstraintType.account_id == account_id, ConstraintType.is_deleted.is_(False),
         ).first()
+
+    def get_preferences_by_ids(self, ids: list[int]) -> dict[int, int]:
+        """{type_id: preference} of the given types (0 for non-preference kinds)."""
+        if not ids:
+            return {}
+        rows = self.db.query(ConstraintType.id, ConstraintType.preference).filter(ConstraintType.id.in_(ids)).all()
+        return {r.id: r.preference for r in rows}
 
     def get_existing_ids(self, ids: list[int], account_id: UUID) -> set[int]:
         if not ids:
@@ -40,6 +47,8 @@ class ConstraintTypeRepository:
             return None
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(obj, field, value)
+        if obj.kind != ConstraintTypeKind.PREFERENCE:
+            obj.preference = 0
         self.db.commit()
         return obj
 

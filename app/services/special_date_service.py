@@ -3,6 +3,7 @@ from datetime import date
 
 from sqlalchemy.exc import IntegrityError
 
+from app.models.models import SpecialDateType
 from app.repositories.special_date_repository import SpecialDateRepository
 from app.schemas.schemas import SpecialDatesBulkUpdate
 from app.context import get_current_user_label
@@ -27,6 +28,9 @@ class SpecialDateService:
         if not day:
             raise ValueError("Special date not found")
         return day
+
+    def get_types_for_unit(self, unit_id: UUID, start: date, end: date) -> dict[date, SpecialDateType]:
+        return self.repository.get_types_for_unit(unit_id, start, end)
 
     def save_all(self, data: SpecialDatesBulkUpdate, account_id: UUID, update_user_id: UUID | None):
         try:

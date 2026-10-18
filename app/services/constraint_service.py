@@ -58,10 +58,16 @@ class ConstraintService:
     ):
         type_ids: set = set()
         staff_ids: set = set()
+        rank_dates: set = set()
         for entry in data.entries:
             if entry.date.strftime("%Y-%m") != month:
                 raise ValueError(f"Entry date {entry.date} is not in month {month}")
-            type_ids.add(entry.type_id)
+            if entry.type_id is None:
+                if entry.date in rank_dates:
+                    raise ValueError(f"Only one Friday-rank entry is allowed per date ({entry.date})")
+                rank_dates.add(entry.date)
+            else:
+                type_ids.add(entry.type_id)
             staff_ids.update(entry.staff_member_ids)
 
         existing_type_ids = self.constraint_type_service.get_existing_ids(list(type_ids), account_id)
@@ -87,11 +93,16 @@ class ConstraintService:
         existing = self.repository.get_by_month(unit_id, month)
         user_comments = self.get_users_comments(submissions)
 
+        # A ranked Friday is a submission with no constraint type; it lands
+        # on the date's Friday-rank row, keyed (None, date).
         submitted: dict = defaultdict(list)
+        ranks_by_key: dict = defaultdict(dict)
         for s in submissions:
-            if s.date is None or s.constraint_type_id is None:
+            if s.date is None or (s.constraint_type_id is None and s.rank is None):
                 continue
             submitted[(s.constraint_type_id, s.date)].append(s.staff_member_id)
+            if s.constraint_type_id is None:
+                ranks_by_key[(None, s.date)][s.staff_member_id] = s.rank
 
         merged: dict = {}
         submitted_ids_by_key: dict = {}
@@ -101,6 +112,9 @@ class ConstraintService:
             if kept:
                 merged[key] = kept
                 submitted_ids_by_key[key] = []  # whatever's left is manual, by construction
+                for staff_id in kept:
+                    if str(staff_id) in row.staff_member_ranks:
+                        ranks_by_key[key].setdefault(staff_id, row.staff_member_ranks[str(staff_id)])
         for key, staff_ids in submitted.items():
             target = merged.setdefault(key, [])
             for staff_id in staff_ids:
@@ -109,7 +123,10 @@ class ConstraintService:
             submitted_ids_by_key[key] = list(staff_ids)  # this pair's provenance is exactly today's submitters
 
         entries = [
-            ConstraintEntry(type_id=type_id, date=entry_date, staff_member_ids=staff_ids)
+            ConstraintEntry(
+                type_id=type_id, date=entry_date, staff_member_ids=staff_ids,
+                staff_member_ranks=ranks_by_key.get((type_id, entry_date), {}) if type_id is None else {},
+            )
             for (type_id, entry_date), staff_ids in merged.items()
         ]
 

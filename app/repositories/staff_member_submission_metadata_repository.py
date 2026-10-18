@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models.models import StaffMemberSubmissionMetadata, SubmissionFeature
+from app.models.models import FridayMode, StaffMemberSubmissionMetadata, SubmissionFeature
 
 
 class StaffMemberSubmissionMetadataRepository:
@@ -18,7 +18,10 @@ class StaffMemberSubmissionMetadataRepository:
             StaffMemberSubmissionMetadata.month == month,
         ).first()
 
-    def upsert(self, unit_id: UUID, month: str, start_time, end_time, updated_by: Optional[UUID]):
+    def upsert(
+        self, unit_id: UUID, month: str, start_time, end_time, updated_by: Optional[UUID],
+        friday_mode: Optional[FridayMode] = None,
+    ):
         row = self.get_by_unit_month(unit_id, month)
         if row:
             row.start_time = start_time
@@ -30,6 +33,8 @@ class StaffMemberSubmissionMetadataRepository:
                 start_time=start_time, end_time=end_time, updated_by=updated_by,
             )
             self.db.add(row)
+        if friday_mode is not None:
+            row.friday_mode = friday_mode
         self.db.commit()
         return row
 
