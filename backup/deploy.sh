@@ -24,6 +24,10 @@ if [[ "$SUPABASE_DB_URL" != *"pooler.supabase.com:5432/"* ]]; then
   exit 1
 fi
 PG_MAJOR="${PG_MAJOR:-17}"
+if [[ ! "$PG_MAJOR" =~ ^[0-9]+$ ]]; then
+  echo "PG_MAJOR must be the major version only, for example 17 (not 17.4)." >&2
+  exit 1
+fi
 REGION="${REGION:-me-west1}"
 BUCKET="${BUCKET:-${PROJECT_ID}-supabase-backups}"
 SCHEDULE="${SCHEDULE:-0 3,15 * * *}"
@@ -46,6 +50,8 @@ SECRET="${SECRET:-supabase-postgres-prod}"
 REPOSITORY="supabase-backup"
 JOB_SA="supabase-backup-job@${PROJECT_ID}.iam.gserviceaccount.com"
 SCHEDULER_SA="supabase-backup-scheduler@${PROJECT_ID}.iam.gserviceaccount.com"
+BUILD_SA="supabase-backup-builder@${PROJECT_ID}.iam.gserviceaccount.com"
+SOURCE_BUCKET="${PROJECT_ID}_cloudbuild"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/backup:$(date -u +%Y%m%d%H%M%S)"
 
 step() { echo; echo "==> $*"; }
@@ -82,6 +88,7 @@ gcloud storage buckets update "gs://${BUCKET}" --lifecycle-file="${SCRIPT_DIR}/l
 step "Creating service accounts"
 ensure_service_account supabase-backup-job "$JOB_SA"
 ensure_service_account supabase-backup-scheduler "$SCHEDULER_SA"
+ensure_service_account supabase-backup-builder "$BUILD_SA"
 
 step "Checking the existing password secret"
 if ! gcloud secrets describe "$SECRET" >/dev/null 2>&1; then
@@ -106,6 +113,28 @@ if ! gcloud artifacts repositories describe "$REPOSITORY" --location="$REGION" >
     --repository-format=docker \
     --location="$REGION"
 fi
+
+# Builds run as their own service account, which can only read the uploaded
+# source, push to this one repository, and write build logs. This avoids
+# depending on the default compute service account's permissions.
+if ! gcloud storage buckets describe "gs://${SOURCE_BUCKET}" >/dev/null 2>&1; then
+  gcloud storage buckets create "gs://${SOURCE_BUCKET}" \
+    --location="$REGION" \
+    --uniform-bucket-level-access \
+    --public-access-prevention
+fi
+gcloud storage buckets add-iam-policy-binding "gs://${SOURCE_BUCKET}" \
+  --member="serviceAccount:${BUILD_SA}" \
+  --role=roles/storage.objectViewer >/dev/null
+gcloud artifacts repositories add-iam-policy-binding "$REPOSITORY" \
+  --location="$REGION" \
+  --member="serviceAccount:${BUILD_SA}" \
+  --role=roles/artifactregistry.writer >/dev/null
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${BUILD_SA}" \
+  --role=roles/logging.logWriter \
+  --condition=None >/dev/null
+
 # Upload only the two files the image needs, never the rest of your project.
 build_dir="$(mktemp -d)"
 build_config="$(mktemp)"
@@ -117,8 +146,23 @@ steps:
   - name: gcr.io/cloud-builders/docker
     args: [build, --build-arg, PG_MAJOR=${PG_MAJOR}, -t, "${IMAGE}", .]
 images: ["${IMAGE}"]
+serviceAccount: projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}
+options:
+  logging: CLOUD_LOGGING_ONLY
 EOF
-gcloud builds submit --config="$build_config" "$build_dir"
+# New permissions can take a minute or two to apply, so retry a few times.
+for attempt in 1 2 3 4; do
+  if gcloud builds submit --config="$build_config" \
+    --gcs-source-staging-dir="gs://${SOURCE_BUCKET}/source" "$build_dir"; then
+    break
+  fi
+  if ((attempt == 4)); then
+    echo "The build failed 4 times. See the error above." >&2
+    exit 1
+  fi
+  echo "Build failed, possibly because new permissions haven't applied yet. Retrying in 30 seconds..."
+  sleep 30
+done
 
 step "Deploying the Cloud Run job"
 gcloud run jobs deploy "$JOB" \
