@@ -1,0 +1,23 @@
+# pg_dump must be the same major version as your Supabase Postgres, or newer.
+# Override at build time with --build-arg PG_MAJOR=15 (deploy.sh does this for you).
+ARG PG_MAJOR=17
+
+FROM google/cloud-sdk:slim
+
+ARG PG_MAJOR
+ENV PG_MAJOR=${PG_MAJOR}
+
+# Debian's own repository only carries one Postgres version, so add the official
+# PostgreSQL repository (PGDG) to get the exact client version we need.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-common curl ca-certificates \
+    && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+    && apt-get install -y --no-install-recommends "postgresql-client-${PG_MAJOR}" \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH=/usr/lib/postgresql/${PG_MAJOR}/bin:$PATH
+
+WORKDIR /app
+COPY backup.sh /app/backup.sh
+
+CMD ["bash", "/app/backup.sh"]
