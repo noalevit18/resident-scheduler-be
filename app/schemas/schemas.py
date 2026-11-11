@@ -2,7 +2,7 @@ import enum
 import re
 import datetime as dt
 from datetime import datetime, date
-from typing import Optional, List, Any, Dict
+from typing import Annotated, Optional, List, Any, Dict
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -220,6 +220,12 @@ class StaffSettingsResponse(SnakeCaseModel):
 # ==========================================
 
 
+# Rank of a staff member in one on-call station: 1..5, 5 = strongest.
+OnCallStationRank = Annotated[int, Field(ge=1, le=5)]
+# {"YYYY-MM": {on_call_station_id: rank}} — JSON keys arrive as strings and are coerced to int.
+MonthOnCallCertifications = Dict[str, Dict[int, OnCallStationRank]]
+
+
 class Staff(SnakeCaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     user_id: Optional[UUID] = None
@@ -227,6 +233,7 @@ class Staff(SnakeCaseModel):
     archived_since: Optional[str] = None
     month_rotation: Optional[Dict[str, List[int]]] = {}
     month_certifications: Optional[Dict[str, List[int]]] = {}
+    month_on_call_certifications: Optional[MonthOnCallCertifications] = {}
 
 
 class StaffCreate(Staff):
@@ -240,6 +247,7 @@ class StaffUpdate(SnakeCaseModel):
     archived_since: Optional[str] = None
     month_rotation: Optional[Dict[str, List[int]]] = None
     month_certifications: Optional[Dict[str, List[int]]] = None
+    month_on_call_certifications: Optional[MonthOnCallCertifications] = None
 
 
 class StaffResponse(Staff):
@@ -281,11 +289,24 @@ class SeniorResponse(Senior):
 
 
 # ==========================================
+# COLOR SCHEMAS
+# ==========================================
+
+# Shared by constraint types and on-call stations (stored as JSONB).
+class ConstraintTypeColor(SnakeCaseModel):
+    bg: str
+    text: str
+    border: str
+    is_custom: Optional[bool] = False
+
+
+# ==========================================
 # ON-CALL STATION SCHEMAS
 # ==========================================
 
 class OnCallStationCreate(SnakeCaseModel):
     name: str = Field(..., min_length=1, max_length=64)
+    color: Optional[ConstraintTypeColor] = None
 
 
 class OnCallStationsCreate(SnakeCaseModel):
@@ -295,6 +316,7 @@ class OnCallStationsCreate(SnakeCaseModel):
 class OnCallStationUpdateEntry(SnakeCaseModel):
     id: int
     name: Optional[str] = Field(None, min_length=1, max_length=64)
+    color: Optional[ConstraintTypeColor] = None
 
 
 class OnCallStationsUpdate(SnakeCaseModel):
@@ -308,6 +330,7 @@ class OnCallStationResponse(SnakeCaseModel):
     id: int
     division_id: UUID
     name: str
+    color: Optional[ConstraintTypeColor] = None
     created_at: datetime
     created_by: Optional[UUID] = None
     is_deleted: bool = False
@@ -552,13 +575,6 @@ class OnCallShiftHistoryResponse(SnakeCaseModel):
 # ==========================================
 # CONSTRAINT TYPE SCHEMAS
 # ==========================================
-
-class ConstraintTypeColor(SnakeCaseModel):
-    bg: str
-    text: str
-    border: str
-    is_custom: Optional[bool] = False
-
 
 class ConstraintType(SnakeCaseModel):
     account_id: UUID
