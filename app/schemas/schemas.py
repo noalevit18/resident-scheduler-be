@@ -76,6 +76,13 @@ class FridayMode(str, enum.Enum):
     ranking = "ranking"
 
 
+class UnitMode(str, enum.Enum):
+    residents = "residents"
+    nursing = "nursing"
+    attendings = "attendings"
+    interns = "interns"
+
+
 MAX_FRIDAY_RANK = 5
 
 
@@ -141,6 +148,7 @@ class Unit(SnakeCaseModel):
     division_id: UUID
     name: str = Field(..., min_length=1, max_length=100)
     active: bool = False
+    mode: UnitMode = UnitMode.residents
     created_at: Optional[datetime] = None
 
 
@@ -152,6 +160,7 @@ class UnitCreate(Unit):
 class UnitUpdate(SnakeCaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     active: Optional[bool] = None
+    mode: Optional[UnitMode] = None
 
 
 class UnitResponse(Unit):

@@ -66,6 +66,13 @@ class FridayMode(str, enum.Enum):
     RANKING = "ranking"
 
 
+class UnitMode(str, enum.Enum):
+    RESIDENTS = "residents"
+    NURSING = "nursing"
+    ATTENDINGS = "attendings"
+    INTERNS = "interns"
+
+
 class Account(Base):
     __tablename__ = "accounts"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -109,6 +116,9 @@ class Unit(Base):
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    mode: Mapped[UnitMode] = mapped_column(
+        SQLEnum(UnitMode, name="unit_mode"), default=UnitMode.RESIDENTS, server_default="RESIDENTS", nullable=False,
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
