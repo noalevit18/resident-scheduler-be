@@ -141,6 +141,9 @@ class StaffMember(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     month_rotation: Mapped[Optional[dict]] = mapped_column(JSONB, server_default="{}")
     month_certifications: Mapped[Optional[dict]] = mapped_column(JSONB, server_default="{}")
+    # {"YYYY-MM": {"<on_call_station_id>": rank}} — on-call stations the member is
+    # certified for that month, each with the member's rank there (1..5, 5 = strongest).
+    month_on_call_certifications: Mapped[Optional[dict]] = mapped_column(JSONB, server_default="{}")
     active_since: Mapped[Optional[str]] = mapped_column(Text)
     archived_since: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -172,6 +175,8 @@ class OnCallStation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     division_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    # {"bg", "text", "border", "is_custom"} — same shape as ConstraintType.color.
+    color: Mapped[Optional[dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
