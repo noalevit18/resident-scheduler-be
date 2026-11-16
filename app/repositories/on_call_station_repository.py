@@ -33,7 +33,13 @@ class OnCallStationRepository:
         return {row.id: row for row in query.all()}
 
     def create_all(self, division_id: UUID, entries: list[OnCallStationCreate], created_by) -> list[OnCallStation]:
-        stations = [OnCallStation(division_id=division_id, name=e.name, created_by=created_by) for e in entries]
+        stations = [
+            OnCallStation(
+                division_id=division_id, name=e.name, created_by=created_by,
+                color=e.color.model_dump() if e.color else None,
+            )
+            for e in entries
+        ]
         self.db.add_all(stations)
         self.db.commit()
         return stations

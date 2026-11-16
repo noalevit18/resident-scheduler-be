@@ -34,12 +34,18 @@ class StaffService:
         return staff_member
 
     def create_member(self, staff_data: StaffCreate):
-        return self.repository.create(staff_data)
+        staff_member = self.repository.create(staff_data)
+        logger.info("Created staff member %s (unit_id=%s) by %s", staff_member.name, staff_data.unit_id, get_current_user_label())
+        return staff_member
 
     def update_member(self, member_id: UUID, unit_id: UUID, update_data: dict):
         staff_member = self.repository.update(member_id, unit_id, update_data)
         if not staff_member:
             raise ValueError("Staff member not found")
+        logger.info(
+            "Updated staff member %s (unit_id=%s, fields=%s) by %s",
+            staff_member.name, unit_id, sorted(update_data.keys()), get_current_user_label(),
+        )
         return staff_member
 
     def delete_staff(self, member_id: UUID, unit_id: UUID):
