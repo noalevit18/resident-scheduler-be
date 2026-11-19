@@ -76,6 +76,13 @@ class FridayMode(str, enum.Enum):
     ranking = "ranking"
 
 
+class OnCallDistributionMode(str, enum.Enum):
+    ROTATION_DAILY = "rotation_daily"
+    ROTATION_WEEKLY = "rotation_weekly"
+    TURNS = "turns"
+    MANUAL = "manual"
+
+
 class UnitMode(str, enum.Enum):
     residents = "residents"
     nursing = "nursing"
@@ -313,9 +320,63 @@ class ConstraintTypeColor(SnakeCaseModel):
 # ON-CALL STATION SCHEMAS
 # ==========================================
 
+ON_CALL_NUMBER_OF_RESIDENTS_MAX = 50
+ON_CALL_INITIALS_MAX_LENGTH = 6
+ON_CALL_ROTATION_LENGTH_MAX = 30
+
+
+def _reject_null(field: str, value: Any) -> Any:
+    if value is None:
+        raise ValueError(f"{field} cannot be null; omit it to keep the current value")
+    return value
+
+
+def _blank_to_none(value: Any) -> Any:
+    """An empty or whitespace-only string means "none"."""
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value.strip() if isinstance(value, str) else value
+
+
+def _dedupe(values: List[Any]) -> List[Any]:
+    return list(dict.fromkeys(values))
+
+
 class OnCallStationCreate(SnakeCaseModel):
     name: str = Field(..., min_length=1, max_length=64)
+    initials: Optional[str] = Field(None, max_length=ON_CALL_INITIALS_MAX_LENGTH)
     color: Optional[ConstraintTypeColor] = None
+    number_of_residents: int = Field(1, ge=1, le=ON_CALL_NUMBER_OF_RESIDENTS_MAX)
+    requires_independent: bool = False
+    open_to_external: bool = False
+    distribution_mode: OnCallDistributionMode = OnCallDistributionMode.ROTATION_DAILY
+    priority_unit_id: Optional[UUID] = None
+    staff_rotation_id: Optional[int] = None
+    required_certification_ids: List[int] = Field(default_factory=list)
+    rotation_length: int = Field(1, ge=1, le=ON_CALL_ROTATION_LENGTH_MAX)
+    rotation_start_date: Optional[date] = None
+    rotation_unit_ids: List[UUID] = Field(default_factory=list)
+
+    @field_validator("initials", mode="before")
+    @classmethod
+    def _blank_initials_to_none(cls, value: Any) -> Any:
+        return _blank_to_none(value)
+
+    @field_validator("rotation_unit_ids")
+    @classmethod
+    def _dedupe_rotation_unit_ids(cls, value: List[UUID]) -> List[UUID]:
+        return _dedupe(value)
+
+    @field_validator("required_certification_ids")
+    @classmethod
+    def _dedupe_certification_ids(cls, value: List[int]) -> List[int]:
+        return _dedupe(value)
+
+    @model_validator(mode="after")
+    def _turns_needs_priority(self) -> "OnCallStationCreate":
+        if self.distribution_mode == OnCallDistributionMode.TURNS and self.priority_unit_id is None:
+            raise ValueError("a station distributed by turns needs a priority unit")
+        return self
 
 
 class OnCallStationsCreate(SnakeCaseModel):
@@ -323,9 +384,44 @@ class OnCallStationsCreate(SnakeCaseModel):
 
 
 class OnCallStationUpdateEntry(SnakeCaseModel):
+    """Omitted fields keep their value. priority_unit_id and staff_rotation_id
+    may be null (none), and so may initials (cleared); number_of_residents, requires_independent, open_to_external, distribution_mode,
+    rotation_length, rotation_start_date, rotation_unit_ids and
+    required_certification_ids cannot."""
     id: int
     name: Optional[str] = Field(None, min_length=1, max_length=64)
+    initials: Optional[str] = Field(None, max_length=ON_CALL_INITIALS_MAX_LENGTH)
     color: Optional[ConstraintTypeColor] = None
+    number_of_residents: Optional[int] = Field(None, ge=1, le=ON_CALL_NUMBER_OF_RESIDENTS_MAX)
+    requires_independent: Optional[bool] = None
+    open_to_external: Optional[bool] = None
+    distribution_mode: Optional[OnCallDistributionMode] = None
+    priority_unit_id: Optional[UUID] = None
+    staff_rotation_id: Optional[int] = None
+    required_certification_ids: Optional[List[int]] = None
+    rotation_length: Optional[int] = Field(None, ge=1, le=ON_CALL_ROTATION_LENGTH_MAX)
+    rotation_start_date: Optional[date] = None
+    rotation_unit_ids: Optional[List[UUID]] = None
+
+    @field_validator("initials", mode="before")
+    @classmethod
+    def _blank_initials_to_none(cls, value: Any) -> Any:
+        return _blank_to_none(value)
+
+    @field_validator("number_of_residents", "requires_independent", "open_to_external", "distribution_mode", "rotation_length", "rotation_start_date", "rotation_unit_ids", "required_certification_ids", mode="before")
+    @classmethod
+    def _reject_null_fields(cls, value: Any, info: Any) -> Any:
+        return _reject_null(info.field_name, value)
+
+    @field_validator("rotation_unit_ids")
+    @classmethod
+    def _dedupe_rotation_unit_ids(cls, value: Optional[List[UUID]]) -> Optional[List[UUID]]:
+        return None if value is None else _dedupe(value)
+
+    @field_validator("required_certification_ids")
+    @classmethod
+    def _dedupe_certification_ids(cls, value: Optional[List[int]]) -> Optional[List[int]]:
+        return None if value is None else _dedupe(value)
 
 
 class OnCallStationsUpdate(SnakeCaseModel):
@@ -339,10 +435,79 @@ class OnCallStationResponse(SnakeCaseModel):
     id: int
     division_id: UUID
     name: str
+    initials: Optional[str] = None
     color: Optional[ConstraintTypeColor] = None
+    number_of_residents: int = 1
+    requires_independent: bool = False
+    open_to_external: bool = False
+    distribution_mode: OnCallDistributionMode = OnCallDistributionMode.ROTATION_DAILY
+    priority_unit_id: Optional[UUID] = None
+    staff_rotation_id: Optional[int] = None
+    required_certification_ids: List[int] = Field(default_factory=list)
+    rotation_length: int = 1
+    rotation_start_date: date
+    rotation_unit_ids: List[UUID] = Field(default_factory=list)
+    group_id: Optional[int] = None
+    group_order: int = 0
     created_at: datetime
     created_by: Optional[UUID] = None
     is_deleted: bool = False
+    # Available up to the end of this month; gone from the months after it.
+    deleted_at: Optional[datetime] = None
+
+
+class OnCallStationGroupWrite(SnakeCaseModel):
+    """A group's name and its stations, in display order (create, or replace
+    on update). A station listed here leaves any other group."""
+    name: str = Field(..., min_length=1, max_length=64)
+    station_ids: List[int] = Field(default_factory=list)
+
+    @field_validator("station_ids")
+    @classmethod
+    def _dedupe_station_ids(cls, value: List[int]) -> List[int]:
+        return _dedupe(value)
+
+
+class OnCallStationGroupResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    division_id: UUID
+    name: str
+    station_ids: List[int] = Field(default_factory=list)
+
+
+class OnCallUnitSettingsWrite(SnakeCaseModel):
+    """`station_ids`: the stations the unit can cover; empty means every
+    station. `priority_station_ids`: the stations where the unit is the
+    priority unit (a station has at most one, so this takes it over)."""
+    station_ids: List[int] = Field(default_factory=list)
+    priority_station_ids: List[int] = Field(default_factory=list)
+
+    @field_validator("station_ids", "priority_station_ids")
+    @classmethod
+    def _dedupe_ids(cls, value: List[int]) -> List[int]:
+        return _dedupe(value)
+
+
+class OnCallUnitSettingsResponse(SnakeCaseModel):
+    unit_id: UUID
+    station_ids: List[int] = Field(default_factory=list)
+    priority_station_ids: List[int] = Field(default_factory=list)
+
+
+ON_CALL_SHIFT_LENGTH_DEFAULT_HOURS = 24
+ON_CALL_SHIFT_LENGTH_MAX_HOURS = 48
+
+
+class OnCallGeneralSettingsWrite(SnakeCaseModel):
+    """The division's general on-call settings, replaced as a whole."""
+    # How long an on-call shift lasts, in hours (e.g. 21 or 26).
+    shift_length_hours: int = Field(..., ge=1, le=ON_CALL_SHIFT_LENGTH_MAX_HOURS)
+
+
+class OnCallGeneralSettingsResponse(SnakeCaseModel):
+    shift_length_hours: int = ON_CALL_SHIFT_LENGTH_DEFAULT_HOURS
 
 
 # ==========================================
