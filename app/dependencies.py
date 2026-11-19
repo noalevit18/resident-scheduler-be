@@ -11,6 +11,7 @@ from app.repositories.metadata_repository import MetadataRepository
 from app.repositories.staff_repository import StaffRepository
 from app.repositories.senior_repository import SeniorRepository
 from app.repositories.on_call_station_repository import OnCallStationRepository
+from app.repositories.on_call_settings_repository import OnCallSettingsRepository
 from app.repositories.on_call_shift_repository import OnCallShiftRepository
 from app.repositories.station_repository import StationRepository
 from app.repositories.schedule_repository import ScheduleRepository
@@ -29,6 +30,7 @@ from app.services.authorization_service import AuthorizationService
 from app.services.staff_service import StaffService
 from app.services.senior_service import SeniorService
 from app.services.on_call_station_service import OnCallStationService
+from app.services.on_call_settings_service import OnCallSettingsService
 from app.services.on_call_shift_service import OnCallShiftService
 from app.services.station_service import StationService
 from app.services.unit_service import UnitService
@@ -47,6 +49,7 @@ def get_staff_member_submission_repository(db: Session = Depends(get_db)): retur
 def get_staff_repository(db: Session = Depends(get_db)): return StaffRepository(db)
 def get_senior_repository(db: Session = Depends(get_db)): return SeniorRepository(db)
 def get_on_call_station_repository(db: Session = Depends(get_db)): return OnCallStationRepository(db)
+def get_on_call_settings_repository(db: Session = Depends(get_db)): return OnCallSettingsRepository(db)
 def get_on_call_shift_repository(db: Session = Depends(get_db)): return OnCallShiftRepository(db)
 def get_station_repository(db: Session = Depends(get_db)): return StationRepository(db)
 def get_schedule_repository(db: Session = Depends(get_db)): return ScheduleRepository(db)
@@ -100,7 +103,13 @@ def get_staff_member_submission_service(
     repo, submission_metadata_service, staff_service, special_date_service, constraint_type_service,
 )
 def get_senior_service(repo: SeniorRepository = Depends(get_senior_repository)): return SeniorService(repo)
-def get_on_call_station_service(repo: OnCallStationRepository = Depends(get_on_call_station_repository)): return OnCallStationService(repo)
+def get_on_call_station_service(
+    repo: OnCallStationRepository = Depends(get_on_call_station_repository),
+    settings_repo: OnCallSettingsRepository = Depends(get_on_call_settings_repository),
+): return OnCallStationService(repo, settings_repo)
+def get_on_call_settings_service(
+    repo: OnCallSettingsRepository = Depends(get_on_call_settings_repository),
+): return OnCallSettingsService(repo)
 def get_on_call_shift_service(
     repo: OnCallShiftRepository = Depends(get_on_call_shift_repository),
     on_call_station_service: OnCallStationService = Depends(get_on_call_station_service),

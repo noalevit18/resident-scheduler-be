@@ -15,6 +15,9 @@ class StaffCertificationService:
     def get_all_certifications(self, unit_id: UUID):
         return self.repository.get_all(unit_id)
 
+    def get_division_certifications(self, division_id: UUID):
+        return self.repository.get_all_by_division(division_id)
+
     def create_certification(self, data: StaffCertificationCreate):
         return self.repository.create(data)
 

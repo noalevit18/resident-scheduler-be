@@ -172,6 +172,52 @@ class Senior(Base):
     deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
 
 
+class OnCallDistributionMode(str, enum.Enum):
+    ROTATION_DAILY = "rotation_daily"
+    ROTATION_WEEKLY = "rotation_weekly"
+    TURNS = "turns"
+    MANUAL = "manual"
+
+
+class OnCallStationGroup(Base):
+    """A named bucket of on-call stations that usually come together (staffed
+    by the same unit on a given day, by default). Not versioned."""
+    __tablename__ = "on_call_station_groups"
+    __table_args__ = (
+        UniqueConstraint("division_id", "name", name="on_call_station_groups_division_id_name_key"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    division_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    stations: Mapped[List["OnCallStation"]] = relationship(
+        "OnCallStation", order_by="OnCallStation.group_order", lazy="selectin", viewonly=True,
+    )
+
+    @property
+    def station_ids(self) -> List[int]:
+        """The group's active stations, in display order."""
+        return [station.id for station in self.stations if not station.is_deleted]
+
+
+class OnCallDivisionSettings(Base):
+    """General on-call settings of a division. A division without a row uses
+    the defaults."""
+    __tablename__ = "on_call_division_settings"
+    division_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), primary_key=True)
+    shift_length_hours: Mapped[int] = mapped_column(Integer, default=24, server_default=text("24"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class OnCallUnitStation(Base):
+    """A station a unit's residents can cover. A unit with no rows can cover
+    every station."""
+    __tablename__ = "on_call_unit_stations"
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), primary_key=True)
+    on_call_station_id: Mapped[int] = mapped_column(Integer, ForeignKey("on_call_stations.id", ondelete="CASCADE"), primary_key=True, index=True)
+
+
 class OnCallStation(Base):
     __tablename__ = "on_call_stations"
     __table_args__ = (
@@ -185,11 +231,34 @@ class OnCallStation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     division_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    initials: Mapped[Optional[str]] = mapped_column(Text)
     # {"bg", "text", "border", "is_custom"} — same shape as ConstraintType.color.
     color: Mapped[Optional[dict]] = mapped_column(JSONB)
+    number_of_residents: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"), nullable=False)
+    requires_independent: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    open_to_external: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    distribution_mode: Mapped[OnCallDistributionMode] = mapped_column(
+        SQLEnum(OnCallDistributionMode, name="on_call_distribution_mode"),
+        default=OnCallDistributionMode.ROTATION_DAILY, server_default="ROTATION_DAILY", nullable=False,
+    )
+    priority_unit_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="SET NULL"))
+    staff_rotation_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("staff_rotations.id", ondelete="SET NULL"))
+    required_certification_ids: Mapped[list[int]] = mapped_column(
+        ARRAY(Integer), default=list, server_default=text("'{}'"), nullable=False,
+    )
+    rotation_length: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"), nullable=False)
+    rotation_start_date: Mapped[date] = mapped_column(Date, server_default=func.current_date(), default=date.today, nullable=False)
+    rotation_unit_ids: Mapped[List[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), default=list, server_default=text("'{}'"), nullable=False,
+    )
+    group_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("on_call_station_groups.id", ondelete="SET NULL"), index=True)
+    group_order: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    unit_coverage: Mapped[List["OnCallUnitStation"]] = relationship("OnCallUnitStation", cascade="all, delete-orphan")
 
 
 class Station(Base):

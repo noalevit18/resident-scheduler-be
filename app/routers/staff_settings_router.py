@@ -30,6 +30,19 @@ def get_certifications(
     return service.get_all_certifications(unit_id)
 
 
+@router.get("/certifications/division", response_model=list[StaffCertificationResponse])
+def get_division_certifications(
+    division_id: UUID,
+    service: StaffCertificationService = Depends(get_certification_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    """The certifications of every unit in the division, in one call."""
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division(user, division_id)
+    return service.get_division_certifications(division_id)
+
+
 @router.post("/certifications", response_model=StaffCertificationResponse)
 def create_certification(
     data: StaffCertificationCreate,

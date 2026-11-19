@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app.models.models import StaffCertification, StaffRotation
+from app.models.models import StaffCertification, StaffRotation, Unit
 from app.schemas.schemas import StaffCertificationCreate, StaffRotationCreate
 from uuid import UUID
 
@@ -10,6 +10,16 @@ class StaffCertificationRepository:
 
     def get_all(self, unit_id: UUID):
         return self.db.query(StaffCertification).filter(StaffCertification.unit_id == unit_id).all()
+
+    def get_all_by_division(self, division_id: UUID):
+        """The certifications of every unit in the division, by unit then name."""
+        return (
+            self.db.query(StaffCertification)
+            .join(Unit, Unit.id == StaffCertification.unit_id)
+            .filter(Unit.division_id == division_id)
+            .order_by(Unit.name, StaffCertification.name)
+            .all()
+        )
 
     def create(self, data: StaffCertificationCreate):
         db_obj = StaffCertification(**data.model_dump())

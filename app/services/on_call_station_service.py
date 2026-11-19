@@ -1,13 +1,42 @@
 import logging
+from typing import Iterable, Union
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
 from app.repositories.on_call_station_repository import OnCallStationRepository
-from app.schemas.schemas import OnCallStationsCreate, OnCallStationsUpdate
+from app.repositories.on_call_settings_repository import OnCallSettingsRepository
+from app.schemas.schemas import OnCallStationCreate, OnCallStationsCreate, OnCallStationsUpdate, OnCallStationUpdateEntry
+from app.services.on_call_settings_service import (
+    OnCallSettingsError,
+    check_turns_have_priority,
+    drop_priority_from_rotation,
+    ensure_priority_unit_covers,
+    validate_division_certifications,
+    validate_division_rotations,
+    validate_division_units,
+)
 from app.context import get_current_user_label
 
 logger = logging.getLogger(__name__)
+
+
+def _referenced_unit_ids(entries: Iterable[Union[OnCallStationCreate, OnCallStationUpdateEntry]]) -> list[UUID]:
+    """The units an entry names: its priority unit and its rotation order."""
+    unit_ids: list[UUID] = []
+    for entry in entries:
+        if entry.priority_unit_id is not None:
+            unit_ids.append(entry.priority_unit_id)
+        unit_ids.extend(entry.rotation_unit_ids or [])
+    return unit_ids
+
+
+def _referenced_certification_ids(entries: Iterable[Union[OnCallStationCreate, OnCallStationUpdateEntry]]) -> list[int]:
+    return [cid for entry in entries for cid in (entry.required_certification_ids or [])]
+
+
+def _referenced_rotation_ids(entries: Iterable[Union[OnCallStationCreate, OnCallStationUpdateEntry]]) -> list[int]:
+    return [entry.staff_rotation_id for entry in entries if entry.staff_rotation_id is not None]
 
 
 class OnCallStationNameConflictError(Exception):
@@ -18,8 +47,9 @@ class OnCallStationNameConflictError(Exception):
 
 
 class OnCallStationService:
-    def __init__(self, repository: OnCallStationRepository):
+    def __init__(self, repository: OnCallStationRepository, settings_repository: OnCallSettingsRepository):
         self.repository = repository
+        self.settings_repository = settings_repository
 
     def get_all(self, division_id: UUID, include_deleted: bool = False):
         return self.repository.get_all(division_id, include_deleted=include_deleted)
@@ -40,9 +70,16 @@ class OnCallStationService:
                     "on_call_station_duplicate_name", f"An active station named '{entry.name}' already exists"
                 )
             seen_names.add(entry.name)
+        validate_division_units(self.settings_repository, division_id, _referenced_unit_ids(data.entries))
+        validate_division_rotations(self.settings_repository, division_id, _referenced_rotation_ids(data.entries))
+        validate_division_certifications(self.settings_repository, division_id, _referenced_certification_ids(data.entries))
 
         try:
             created = self.repository.create_all(division_id, data.entries, created_by)
+            for station in created:
+                ensure_priority_unit_covers(self.settings_repository, division_id, station)
+                drop_priority_from_rotation(station)
+            self.repository.db.commit()
         except IntegrityError as e:
             self.repository.db.rollback()
             raise OnCallStationNameConflictError(
@@ -50,13 +87,17 @@ class OnCallStationService:
             ) from e
 
         for station in created:
-            logger.info("Created on-call station %s (division_id=%s) by %s", station.name, division_id, get_current_user_label())
+            logger.info(
+                "Created on-call station %s (division_id=%s, number_of_residents=%s, distribution_mode=%s) by %s",
+                station.name, division_id, station.number_of_residents, station.distribution_mode.value,
+                get_current_user_label(),
+            )
         return created
 
     def update_all(self, division_id: UUID, data: OnCallStationsUpdate):
         """Validates existence and name conflicts up front against a single
         fetch of every touched station plus current active names, then
-        applies every rename/delete in one batch (one commit) instead of
+        applies every update/delete in one batch (one commit) instead of
         one round trip per entry. `data.deleted` station ids are
         soft-deleted in the same call; deleted stations are appended to
         the returned list too."""
@@ -86,9 +127,24 @@ class OnCallStationService:
                     "on_call_station_duplicate_name", f"An active station named '{entry.name}' already exists"
                 )
             target_names[entry.name] = entry.id
+        validate_division_units(self.settings_repository, division_id, _referenced_unit_ids(data.entries))
+        validate_division_rotations(self.settings_repository, division_id, _referenced_rotation_ids(data.entries))
+        validate_division_certifications(self.settings_repository, division_id, _referenced_certification_ids(data.entries))
 
         try:
-            updated = self.repository.update_all(stations_by_id, data.entries, deleted_ids)
+            for entry in data.entries:
+                station = stations_by_id[entry.id]
+                self.repository.apply_fields(station, entry)
+                if "priority_unit_id" in entry.model_fields_set:
+                    ensure_priority_unit_covers(self.settings_repository, division_id, station)
+                drop_priority_from_rotation(station)
+            check_turns_have_priority(stations_by_id[entry.id] for entry in data.entries)
+            for station_id in deleted_ids:
+                self.repository.soft_delete(stations_by_id[station_id])
+            self.repository.db.commit()
+        except OnCallSettingsError:
+            self.repository.db.rollback()
+            raise
         except IntegrityError as e:
             self.repository.db.rollback()
             raise OnCallStationNameConflictError(
@@ -96,16 +152,18 @@ class OnCallStationService:
             ) from e
 
         for entry in data.entries:
+            station = stations_by_id[entry.id]
             logger.info(
-                "Updated on-call station %s (division_id=%s) by %s",
-                stations_by_id[entry.id].name, division_id, get_current_user_label(),
+                "Updated on-call station %s (division_id=%s, number_of_residents=%s, distribution_mode=%s) by %s",
+                station.name, division_id, station.number_of_residents, station.distribution_mode.value,
+                get_current_user_label(),
             )
         for station_id in deleted_ids:
             logger.info(
                 "Deleted on-call station %s (division_id=%s) by %s",
                 stations_by_id[station_id].name, division_id, get_current_user_label(),
             )
-        return updated
+        return list(stations_by_id.values())
 
     def delete(self, station_id: int, division_id: UUID):
         station = self.repository.delete(station_id, division_id)
