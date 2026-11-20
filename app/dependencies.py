@@ -13,6 +13,7 @@ from app.repositories.senior_repository import SeniorRepository
 from app.repositories.on_call_station_repository import OnCallStationRepository
 from app.repositories.on_call_settings_repository import OnCallSettingsRepository
 from app.repositories.on_call_shift_repository import OnCallShiftRepository
+from app.repositories.external_on_call_physician_repository import ExternalOnCallPhysicianRepository
 from app.repositories.station_repository import StationRepository
 from app.repositories.schedule_repository import ScheduleRepository
 from app.repositories.unit_repository import UnitRepository
@@ -32,6 +33,7 @@ from app.services.senior_service import SeniorService
 from app.services.on_call_station_service import OnCallStationService
 from app.services.on_call_settings_service import OnCallSettingsService
 from app.services.on_call_shift_service import OnCallShiftService
+from app.services.external_on_call_physician_service import ExternalOnCallPhysicianService
 from app.services.station_service import StationService
 from app.services.unit_service import UnitService
 from app.services.division_service import DivisionService
@@ -51,6 +53,7 @@ def get_senior_repository(db: Session = Depends(get_db)): return SeniorRepositor
 def get_on_call_station_repository(db: Session = Depends(get_db)): return OnCallStationRepository(db)
 def get_on_call_settings_repository(db: Session = Depends(get_db)): return OnCallSettingsRepository(db)
 def get_on_call_shift_repository(db: Session = Depends(get_db)): return OnCallShiftRepository(db)
+def get_external_on_call_physician_repository(db: Session = Depends(get_db)): return ExternalOnCallPhysicianRepository(db)
 def get_station_repository(db: Session = Depends(get_db)): return StationRepository(db)
 def get_schedule_repository(db: Session = Depends(get_db)): return ScheduleRepository(db)
 def get_unit_repository(db: Session = Depends(get_db)): return UnitRepository(db)
@@ -110,6 +113,9 @@ def get_on_call_station_service(
 def get_on_call_settings_service(
     repo: OnCallSettingsRepository = Depends(get_on_call_settings_repository),
 ): return OnCallSettingsService(repo)
+def get_external_on_call_physician_service(
+    repo: ExternalOnCallPhysicianRepository = Depends(get_external_on_call_physician_repository),
+): return ExternalOnCallPhysicianService(repo)
 def get_on_call_shift_service(
     repo: OnCallShiftRepository = Depends(get_on_call_shift_repository),
     on_call_station_service: OnCallStationService = Depends(get_on_call_station_service),
