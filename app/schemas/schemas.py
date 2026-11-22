@@ -5,7 +5,7 @@ from datetime import datetime, date
 from typing import Annotated, Optional, List, Any, Dict
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, ValidationInfo, field_validator, model_validator
 
 
 # ==========================================
@@ -302,6 +302,67 @@ class SeniorResponse(Senior):
     created_by: Optional[UUID] = None
     is_deleted: bool = False
     deleted_by: Optional[UUID] = None
+
+
+# ==========================================
+# EXTERNAL ON-CALL PHYSICIAN SCHEMAS
+# ==========================================
+
+EXTERNAL_PHYSICIAN_NAME_MAX_LENGTH = 100
+
+
+def _strip_str(value: Any) -> Any:
+    return value.strip() if isinstance(value, str) else value
+
+
+class ExternalOnCallPhysicianCreate(SnakeCaseModel):
+    unit_id: UUID
+    name: str = Field(..., min_length=1, max_length=EXTERNAL_PHYSICIAN_NAME_MAX_LENGTH)
+    user_id: Optional[UUID] = None
+    activation_date: date
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, value: Any) -> Any:
+        return _strip_str(value)
+
+
+class ExternalOnCallPhysicianUpdate(SnakeCaseModel):
+    """Omitted fields keep their value. user_id may be null (disconnects the
+    user); name, activation_date and archived cannot. archived: true archives,
+    false unarchives."""
+    name: Optional[str] = Field(None, min_length=1, max_length=EXTERNAL_PHYSICIAN_NAME_MAX_LENGTH)
+    user_id: Optional[UUID] = None
+    activation_date: Optional[date] = None
+    archived: Optional[bool] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, value: Any) -> Any:
+        if value is None:
+            raise ValueError("name cannot be null")
+        return _strip_str(value)
+
+    @field_validator("activation_date", "archived", mode="before")
+    @classmethod
+    def _not_null(cls, value: Any, info: ValidationInfo) -> Any:
+        if value is None:
+            raise ValueError(f"{info.field_name} cannot be null")
+        return value
+
+
+class ExternalOnCallPhysicianResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    unit_id: UUID
+    name: str
+    user_id: Optional[UUID] = None
+    activation_date: date
+    created_at: datetime
+    created_by: Optional[UUID] = None
+    archived_at: Optional[datetime] = None
+    archived_by: Optional[UUID] = None
 
 
 # ==========================================

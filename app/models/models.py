@@ -210,6 +210,31 @@ class OnCallDivisionSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
+class ExternalOnCallPhysician(Base):
+    """A physician who takes on-call shifts for a unit without being one of
+    its residents. Not a staff member; optionally connected to a regular user.
+    Archived rather than deleted (archived_at set), so past shifts can keep
+    referencing them."""
+    __tablename__ = "external_on_call_physicians"
+    __table_args__ = (
+        Index(
+            "ux_external_on_call_physicians_unit_id_user_id_active",
+            "unit_id", "user_id",
+            unique=True,
+            postgresql_where=text("archived_at IS NULL AND user_id IS NOT NULL"),
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    activation_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    archived_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+
 class OnCallUnitStation(Base):
     """A station a unit's residents can cover. A unit with no rows can cover
     every station."""
