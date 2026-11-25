@@ -51,14 +51,24 @@ class SpecialDateType(str, enum.Enum):
     REGULAR = "regular"
 
 
-class SubmissionFeature(str, enum.Enum):
-    CONSTRAINTS = "constraints"
-    ON_CALL = "on_call"
-
-
 class ConstraintTypeKind(str, enum.Enum):
     BLOCKING = "blocking"
     PREFERENCE = "preference"
+
+
+class ConstraintTypeScope(str, enum.Enum):
+    """Which calendar a constraint type belongs to: the daily schedule's
+    constraints, or the on-call constraints (hard "can't" reasons only)."""
+    SCHEDULE = "schedule"
+    ON_CALL = "on_call"
+
+
+class SubmissionScope(str, enum.Enum):
+    """Which submission window a metadata row is: the daily schedule's
+    (constraints, Friday mode, on-call shift requests) or the on-call
+    constraints'."""
+    SCHEDULE = "schedule"
+    ON_CALL = "on_call"
 
 
 class FridayMode(str, enum.Enum):
@@ -391,6 +401,10 @@ class ConstraintType(Base):
     )
     # Preference scale of a PREFERENCE type: 1 = want, 0 = informational, -1 = prefer not.
     preference: Mapped[int] = mapped_column(SmallInteger, default=0, server_default=text("0"), nullable=False)
+    scope: Mapped[ConstraintTypeScope] = mapped_column(
+        SQLEnum(ConstraintTypeScope, name="constraint_type_scope"),
+        default=ConstraintTypeScope.SCHEDULE, server_default="SCHEDULE", nullable=False,
+    )
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -447,6 +461,99 @@ class MonthlyConstraintsVersion(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
 
 
+class OnCallConstraint(Base):
+    """The master monthly on-call constraints calendar. Insert-only /
+    versioned exactly like `Constraint`. Each row groups the staff members
+    sharing one value on one date: either a scale `preference` (2 = want,
+    1 = prefer, -1 = prefer not, -2 = can't; 0 = "can" is the default and
+    never stored) or a hard on-call constraint type (`type_id`, e.g.
+    vacation / army — equivalent to can't)."""
+    __tablename__ = "on_call_constraints"
+    __table_args__ = (
+        CheckConstraint(
+            "(type_id IS NULL) <> (preference IS NULL)",
+            name="ck_on_call_constraints_type_xor_preference",
+        ),
+        CheckConstraint(
+            "preference IS NULL OR preference IN (-2, -1, 1, 2)",
+            name="ck_on_call_constraints_preference_range",
+        ),
+        Index("idx_on_call_constraints_unit_id_date_version", "unit_id", "date", "version"),
+        Index(
+            "ux_on_call_constraints_type_row",
+            "unit_id", "date", "type_id", "version",
+            unique=True,
+            postgresql_where=text("type_id IS NOT NULL"),
+        ),
+        Index(
+            "ux_on_call_constraints_preference_row",
+            "unit_id", "date", "preference", "version",
+            unique=True,
+            postgresql_where=text("preference IS NOT NULL"),
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    type_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("constraint_types.id", ondelete="RESTRICT"))
+    preference: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    staff_member_ids: Mapped[List[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), default=list, server_default="{}", nullable=False)
+    submitted_staff_member_ids: Mapped[List[uuid.UUID]] = mapped_column(ARRAY(UUID(as_uuid=True)), default=list, server_default="{}", nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
+
+
+class MonthlyOnCallConstraintsVersion(Base):
+    __tablename__ = "monthly_on_call_constraints_versions"
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), primary_key=True)
+    month: Mapped[str] = mapped_column(Text, primary_key=True)  # "YYYY-MM"
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+
+
+class OnCallVersionKind(str, enum.Enum):
+    """What a shared on-call scheduling version saved for a unit."""
+    CONSTRAINTS = "CONSTRAINTS"
+    ROSTER = "ROSTER"
+    DAY_STATIONS = "DAY_STATIONS"
+
+
+class OnCallSchedulingVersion(Base):
+    """One save of a division+month's on-call scheduling. Insert-only. The unit's on-call constraints, roster and
+    day stations a save writes all carry its `version` (their own tables' `version` columns), so one number names
+    the whole page's state. `entities` records what the save wrote: an entity "as of version N" is its latest
+    version at or below N."""
+    __tablename__ = "on_call_scheduling_versions"
+    __table_args__ = (
+        UniqueConstraint("division_id", "month", "version", name="on_call_scheduling_versions_division_month_version_key"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    division_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), nullable=False)
+    month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    entities: Mapped[List["OnCallSchedulingVersionEntity"]] = relationship(
+        "OnCallSchedulingVersionEntity", back_populates="scheduling_version", cascade="all, delete-orphan",
+    )
+
+
+class OnCallSchedulingVersionEntity(Base):
+    """A unit's entity (constraints, roster or day stations) written by a shared on-call scheduling version."""
+    __tablename__ = "on_call_scheduling_version_entities"
+    __table_args__ = (
+        UniqueConstraint("scheduling_version_id", "unit_id", "kind", name="on_call_scheduling_version_entities_key"),
+        Index("idx_on_call_scheduling_version_entities_unit_kind", "unit_id", "kind"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scheduling_version_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("on_call_scheduling_versions.id", ondelete="CASCADE"), nullable=False,
+    )
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[OnCallVersionKind] = mapped_column(SQLEnum(OnCallVersionKind, name="on_call_version_kind"), nullable=False)
+    scheduling_version: Mapped["OnCallSchedulingVersion"] = relationship("OnCallSchedulingVersion", back_populates="entities")
+
+
 class MonthOnCallVersion(Base):
     """Insert-only, one row per (unit_id, month, version) — every
     new on-call version gets its OWN row rather than updating the previous
@@ -486,19 +593,89 @@ class OnCallShift(Base):
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
 
 
-class StaffMemberSubmissionMetadata(Base):
-    """One row per (unit_id, month): the submission window (start_time/
-    end_time) of constraints and on-call.
-    pull_information tracks each feature's own pulled_at/pulled_by
-    independently, keyed by feature name, e.g.
-    {"constraints": {"pulled_at": "...", "pulled_by": "<user-id>"}}."""
-    __tablename__ = "staff_member_submission_metadata"
+class OnCallDayStation(Base):
+    """A unit's change to the stations it populates on a day, on top of what the
+    stations' rotations give it: `is_added` true adds the station that day,
+    false removes it. The on-call shifts are saved separately: the scheduling
+    page takes the station's residents off call in the same save.
+    Insert-only / versioned: every save inserts the unit+month's complete set
+    of changes under a new `version` (see MonthlyOnCallDayStationsVersion);
+    the month's current state is the rows of its latest version."""
+    __tablename__ = "on_call_day_stations"
     __table_args__ = (
-        UniqueConstraint("unit_id", "month", name="staff_member_submission_metadata_unit_id_month_key"),
+        UniqueConstraint(
+            "unit_id", "date", "on_call_station_id", "version", name="on_call_day_stations_unit_id_date_station_version_key",
+        ),
+        Index("idx_on_call_day_stations_unit_id_date_version", "unit_id", "date", "version"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    division_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), nullable=False)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    on_call_station_id: Mapped[int] = mapped_column(Integer, ForeignKey("on_call_stations.id", ondelete="CASCADE"), nullable=False)
+    is_added: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # For a "turns" station: the change re-flows the turns after it — an added day makes the unit's turn
+    # (the next day goes to the unit after it), a removed day keeps the turn with the unit for the next day.
+    shifts_turns: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class MonthlyOnCallDayStationsVersion(Base):
+    """Insert-only, one row per (unit_id, month, version) — every day-stations
+    save gets its own row, so a save that clears every change still shows in
+    the history. The current version is the highest `version`."""
+    __tablename__ = "monthly_on_call_day_stations_versions"
+    __table_args__ = (
+        UniqueConstraint("unit_id", "month", "version", name="monthly_on_call_day_stations_versions_key"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
     month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class OnCallDayNote(Base):
+    """A free-text note on a day of the division's on-call roster, shown on the
+    scheduling page — e.g. a special staffing requirement for that day. One per
+    division and day; a month's notes are replaced as a whole on every save.
+    Not versioned: every view shows the latest notes."""
+    __tablename__ = "on_call_day_notes"
+    __table_args__ = (
+        UniqueConstraint("division_id", "date", name="on_call_day_notes_division_id_date_key"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    division_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("divisions.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class StaffMemberSubmissionMetadata(Base):
+    """One row per (unit_id, month, scope): each scope's own submission
+    window (start_time/end_time) — the daily schedule's (SCHEDULE) and the
+    on-call constraints' (ON_CALL) open and close independently.
+    pull_information tracks each feature's own pulled_at/pulled_by on its
+    scope's row, keyed by feature name, e.g.
+    {"constraints": {"pulled_at": "...", "pulled_by": "<user-id>"}}.
+    friday_mode only applies to the SCHEDULE row."""
+    __tablename__ = "staff_member_submission_metadata"
+    __table_args__ = (
+        UniqueConstraint(
+            "unit_id", "month", "scope", name="staff_member_submission_metadata_unit_id_month_scope_key",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
+    scope: Mapped[SubmissionScope] = mapped_column(
+        SQLEnum(SubmissionScope, name="submission_scope"),
+        default=SubmissionScope.SCHEDULE, server_default="SCHEDULE", nullable=False,
+    )
     start_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     end_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"))
@@ -512,9 +689,11 @@ class StaffMemberSubmissionMetadata(Base):
 
 
 class StaffMemberSubmission(Base):
-    """Shared self-serve submission row: a single date's submission can
-    carry a constraint type, an on-call station, or both at once. Every
-    submission call replaces the full row (both fields together)."""
+    """A member's daily schedule submission row: a date's constraint type or
+    Friday rank; the date-less row holds the month's general comment.
+    `on_call_station_id` is legacy and read-only — on-call station requests
+    from before the on-call constraints form (StaffMemberOnCallSubmission);
+    nothing writes it any more, and it's kept for the past months' data."""
     __tablename__ = "staff_member_submissions"
     __table_args__ = (
         Index(
@@ -543,6 +722,82 @@ class StaffMemberSubmission(Base):
     submitted_empty: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class StaffMemberOnCallSubmission(Base):
+    """A member's self-serve on-call constraints for a month, kept apart from
+    the daily schedule's `staff_member_submissions` (own comment, own
+    "submitted empty" flag, own submission status). A dated row holds the
+    member's on-call wish for that date: a -2..2 scale `preference` (0 = "can"
+    is the default, never stored) or a hard on-call constraint type. The
+    date-less row holds the month's general comment and marks the form as
+    submitted. The submitter is either a staff member of the unit or one of
+    its external on-call physicians — exactly one of the two ids is set."""
+    __tablename__ = "staff_member_on_call_submissions"
+    __table_args__ = (
+        Index(
+            "ix_staff_member_on_call_submissions_per_date_unique",
+            "unit_id", "staff_member_id", "month", "date",
+            unique=True,
+            postgresql_where=text("date IS NOT NULL"),
+        ),
+        Index(
+            "ix_staff_member_on_call_submissions_general_comment_unique",
+            "unit_id", "staff_member_id", "month",
+            unique=True,
+            postgresql_where=text("date IS NULL"),
+        ),
+        Index(
+            "ix_staff_member_on_call_submissions_external_per_date_unique",
+            "unit_id", "external_physician_id", "month", "date",
+            unique=True,
+            postgresql_where=text("date IS NOT NULL AND external_physician_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_staff_member_on_call_submissions_external_comment_unique",
+            "unit_id", "external_physician_id", "month",
+            unique=True,
+            postgresql_where=text("date IS NULL AND external_physician_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "(staff_member_id IS NULL) <> (external_physician_id IS NULL)",
+            name="ck_staff_member_on_call_submissions_one_submitter",
+        ),
+        CheckConstraint(
+            "preference IS NULL OR constraint_type_id IS NULL",
+            name="ck_staff_member_on_call_submissions_preference_xor_type",
+        ),
+        CheckConstraint(
+            "preference IS NULL OR preference IN (-2, -1, 1, 2)",
+            name="ck_staff_member_on_call_submissions_preference_range",
+        ),
+        CheckConstraint(
+            "date IS NOT NULL OR (preference IS NULL AND constraint_type_id IS NULL)",
+            name="ck_staff_member_on_call_submissions_value_needs_date",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False)
+    staff_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("staff_members.id", ondelete="CASCADE"))
+    external_physician_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("external_on_call_physicians.id", ondelete="CASCADE"), index=True,
+    )
+    month: Mapped[str] = mapped_column(Text, nullable=False)  # "YYYY-MM"
+    date: Mapped[Optional[date]] = mapped_column(Date)
+    preference: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    constraint_type_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("constraint_types.id", ondelete="CASCADE"))
+    comment: Mapped[Optional[str]] = mapped_column(Text)
+    submitted_empty: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    @property
+    def submitter_id(self) -> uuid.UUID:
+        """The staff member's or the external physician's id — how the on-call
+        calendars refer to the submitter."""
+        submitter_id = self.staff_member_id or self.external_physician_id
+        assert submitter_id is not None  # ck_staff_member_on_call_submissions_one_submitter
+        return submitter_id
 
 
 class ScheduleVersion(Base):

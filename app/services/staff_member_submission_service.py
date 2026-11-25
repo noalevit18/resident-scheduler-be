@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from typing import Optional
 from uuid import UUID
 
-from app.models.models import FridayMode, SpecialDateType
+from app.models.models import ConstraintTypeScope, FridayMode, SpecialDateType, SubmissionScope
 from app.repositories.constraint_repository import month_bounds
 from app.repositories.staff_member_submission_repository import StaffMemberSubmissionRepository
 from app.services.constraint_type_service import ConstraintTypeService
@@ -20,9 +20,9 @@ FRIDAY = 4  # date.weekday()
 
 
 class StaffMemberSubmissionService:
-    """Shared self-serve submission subsystem: a single date's entry can
-    carry a constraint_type_id, an on_call_station_id, or both at once —
-    used by both the constraints and on-call features' pull flows."""
+    """The daily schedule's self-serve submission form: a date's constraint
+    type or Friday rank, plus the month's general comment. On-call wishes
+    have their own form (OnCallSubmissionService)."""
 
     def __init__(
         self,
@@ -118,6 +118,15 @@ class StaffMemberSubmissionService:
         if any(preference > 0 for preference in preferences.values()):
             raise ValueError("Rank Fridays instead of marking them as wanted")
 
+    def _validate_constraint_types(self, unit_id: UUID, dated_entries: list[StaffMemberSubmissionEntry]):
+        """A schedule constraint must use a schedule type from the unit's account."""
+        type_ids = {e.constraint_type_id for e in dated_entries if e.constraint_type_id is not None}
+        existing = self.constraint_type_service.get_existing_ids_for_unit(
+            list(type_ids), unit_id, ConstraintTypeScope.SCHEDULE,
+        )
+        if type_ids - existing:
+            raise ValueError("Constraint type not found")
+
     def update_member_month(
         self, unit_id: UUID, month: str, data: MemberMonthlySubmissionUpdate, current_user: dict, empty: bool = False,
     ):
@@ -132,15 +141,10 @@ class StaffMemberSubmissionService:
         if len(seen_dates) != len(dated_entries):
             raise ValueError("Only one submission entry is allowed per date")
 
-        # The submission window is shared by every feature — gate on it
-        # once if any entry carries a constraint_type_id or an
-        # on_call_station_id.
-        if any(
-            e.constraint_type_id is not None or e.on_call_station_id is not None or e.rank is not None
-            for e in data.entries
-        ):
-            self.submission_metadata_service.assert_window_open(unit_id, month)
+        if any(e.constraint_type_id is not None or e.rank is not None for e in dated_entries):
+            self.submission_metadata_service.assert_window_open(unit_id, month, SubmissionScope.SCHEDULE)
 
+        self._validate_constraint_types(unit_id, dated_entries)
         self._validate_friday_ranks(unit_id, month, dated_entries)
 
         rows = self.repository.upsert_many(unit_id, staff_member.id, month, data.entries, submitted_empty=empty)

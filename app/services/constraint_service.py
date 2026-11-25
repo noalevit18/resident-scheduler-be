@@ -1,20 +1,36 @@
 import logging
 from collections import defaultdict
-from typing import Optional
+from typing import Any, Callable, Optional
 from uuid import UUID
 
-from app.models.models import SubmissionFeature
+from app.models.models import ConstraintTypeScope
 from app.repositories.constraint_repository import ConstraintRepository
 from app.repositories.staff_member_submission_repository import StaffMemberSubmissionRepository
 from app.services.staff_member_submission_metadata_service import StaffMemberSubmissionMetadataService
 from app.services.constraint_type_service import ConstraintTypeService
 from app.services.staff_service import StaffService
 from app.schemas.schemas import (
-    ConstraintEntry, MonthlyConstraintsUpdate, ConstraintUserComment, ConstraintUserComments,
+    ConstraintEntry, MonthlyConstraintsUpdate, ConstraintUserComment, ConstraintUserComments, SubmissionFeature,
 )
 from app.context import get_current_user_label
 
 logger = logging.getLogger(__name__)
+
+
+def get_users_comments(
+    submissions, member_id_of: Callable[[Any], UUID] = lambda s: s.staff_member_id,
+) -> list[ConstraintUserComments]:
+    """Members' submission comments grouped per member — shared by the
+    schedule and on-call constraints calendars. `member_id_of` gives the id
+    the calendar lists the submitter under."""
+    comments_by_member: dict = defaultdict(list)
+    for s in submissions:
+        if s.comment:
+            comments_by_member[member_id_of(s)].append(ConstraintUserComment(date=s.date, comment=s.comment))
+    return [
+        ConstraintUserComments(staff_member_id=staff_id, comments=entries)
+        for staff_id, entries in comments_by_member.items()
+    ]
 
 
 class ConstraintService:
@@ -33,14 +49,7 @@ class ConstraintService:
         self.staff_service = staff_service
 
     def get_users_comments(self, submissions) -> list[ConstraintUserComments]:
-        comments_by_member: dict = defaultdict(list)
-        for s in submissions:
-            if s.comment:
-                comments_by_member[s.staff_member_id].append(ConstraintUserComment(date=s.date, comment=s.comment))
-        return [
-            ConstraintUserComments(staff_member_id=staff_id, comments=entries)
-            for staff_id, entries in comments_by_member.items()
-        ]
+        return get_users_comments(submissions)
 
     def get_monthly_constraints(self, unit_id: UUID, month: str, version: int | None = None):
         if version is not None:
@@ -70,7 +79,9 @@ class ConstraintService:
                 type_ids.add(entry.type_id)
             staff_ids.update(entry.staff_member_ids)
 
-        existing_type_ids = self.constraint_type_service.get_existing_ids(list(type_ids), account_id)
+        existing_type_ids = self.constraint_type_service.get_existing_ids(
+            list(type_ids), account_id, ConstraintTypeScope.SCHEDULE,
+        )
         if type_ids - existing_type_ids:
             raise ValueError("Constraint type not found")
 
@@ -134,7 +145,7 @@ class ConstraintService:
             unit_id, month, entries, created_by, carry_forward_untouched=False,
             submitted_staff_member_ids_by_key=submitted_ids_by_key,
         )
-        self.submission_metadata_service.mark_pulled(unit_id, month, SubmissionFeature.CONSTRAINTS, created_by)
+        self.submission_metadata_service.mark_pulled(unit_id, month, SubmissionFeature.constraints, created_by)
         logger.info(
             "Pulled %d submission-derived entries into constraints (unit_id=%s, month=%s) by %s",
             len(rows), unit_id, month, get_current_user_label(),

@@ -13,24 +13,37 @@ from app.schemas.schemas import (
     OnCallGeneralSettingsWrite,
     OnCallGeneralSettingsResponse,
     MonthlyOnCallShiftsUpdate,
+    OnCallDayStationsWrite,
+    OnCallDayStationsResponse,
+    OnCallDayNotesWrite,
+    OnCallDayNotesResponse,
+    OnCallDayVersionHistoryResponse,
     MonthlyOnCallShiftsResponse,
     OnCallShiftHistoryResponse,
+    OnCallSchedulingSave,
+    OnCallSchedulingSaveResponse,
+    OnCallSchedulingHistoryResponse,
     SubmissionWindowUpdate,
     SubmissionWindowResponse,
 )
 from app.services.on_call_shift_service import OnCallShiftService, OnCallStationDivisionMismatchError
+from app.services.on_call_day_station_service import OnCallDayStationError, OnCallDayStationService
+from app.services.on_call_scheduling_service import OnCallSchedulingService
+from app.services.on_call_day_note_service import OnCallDayNoteError, OnCallDayNoteService
 from app.services.on_call_station_service import OnCallStationService, OnCallStationNameConflictError
 from app.services.on_call_settings_service import (
     OnCallGroupNameConflictError,
     OnCallSettingsError,
     OnCallSettingsService,
 )
-from app.services.staff_member_submission_metadata_service import StaffMemberSubmissionMetadataService
 from app.services.unit_service import UnitService
 from app.services.authorization_service import AuthorizationService, AuthorizationError
 from app.repositories.on_call_shift_repository import MONTH_PATTERN, OnCallVersionConflictError
 from app.dependencies import (
     get_on_call_shift_service,
+    get_on_call_day_station_service,
+    get_on_call_day_note_service,
+    get_on_call_scheduling_service,
     get_on_call_station_service,
     get_on_call_settings_service,
     get_unit_service,
@@ -86,9 +99,10 @@ def update_on_call_shifts(
 ):
     _validate_month(month)
     user = authz.get_logged_in_user_or_raise(current_user)
-    authz.authorize_unit(user, unit_id)
-    authz.require_admin_role(user)
+    # The on-call roster is shared by the division's units, so any of its admins may edit every unit's roster.
     division_id = _division_id_for_unit(unit_id, unit_service)
+    authz.authorize_division(user, division_id)
+    authz.require_admin_role(user)
     try:
         return service.update_monthly_shifts(unit_id, division_id, month, data, user.id)
     except OnCallVersionConflictError as e:
@@ -97,6 +111,109 @@ def update_on_call_shifts(
         return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": e.code, "message": e.message})
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+# --- Per-day station changes: a unit adds / removes stations it populates on a day ---
+
+def _day_error_response(error: OnCallDayStationError | OnCallDayNoteError) -> JSONResponse:
+    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": error.code, "message": error.message})
+
+
+def _conflict_response(error: OnCallVersionConflictError) -> JSONResponse:
+    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"error": error.code, "message": error.message})
+
+
+@router.get("/dayStations", response_model=OnCallDayStationsResponse)
+def get_on_call_day_stations(
+    unit_id: UUID, month: str, version: int | None = None,
+    service: OnCallDayStationService = Depends(get_on_call_day_station_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    """The unit's changes to the stations its rotations give it, for the month — as of the shared on-call
+    scheduling `version` (its latest changes at or below it), the latest when omitted."""
+    _validate_month(month)
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division_view(user, unit_id)
+    try:
+        return service.get_month(unit_id, month, version)
+    except OnCallDayStationError as e:
+        return _day_error_response(e)
+
+
+@router.get("/dayStations/history", response_model=list[OnCallDayVersionHistoryResponse])
+def get_on_call_day_stations_history(
+    unit_id: UUID, month: str,
+    service: OnCallDayStationService = Depends(get_on_call_day_station_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    """Every saved version of the unit+month's day-station changes, newest first."""
+    _validate_month(month)
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division_view(user, unit_id)
+    return service.get_version_history(unit_id, month)
+
+
+@router.put("/dayStations", response_model=OnCallDayStationsResponse)
+def replace_on_call_day_stations(
+    unit_id: UUID,
+    month: str,
+    data: OnCallDayStationsWrite,
+    service: OnCallDayStationService = Depends(get_on_call_day_station_service),
+    unit_service: UnitService = Depends(get_unit_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    """Saves the unit+month's changes as a whole, as a new version. Any admin of the unit's division may: on-call
+    stations are shared across the division's units, so one unit's admin moves stations between units."""
+    _validate_month(month)
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.require_admin_role(user)
+    authz.authorize_division_view(user, unit_id)
+    division_id = _division_id_for_unit(unit_id, unit_service)
+    try:
+        return service.replace_month(unit_id, division_id, month, data, user.id)
+    except OnCallDayStationError as e:
+        return _day_error_response(e)
+    except OnCallVersionConflictError as e:
+        return _conflict_response(e)
+
+
+# --- Per-day notes on the division's roster (e.g. a special staffing requirement that day) ---
+
+@router.get("/dayNotes", response_model=OnCallDayNotesResponse)
+def get_on_call_day_notes(
+    division_id: UUID, month: str,
+    service: OnCallDayNoteService = Depends(get_on_call_day_note_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    """The division's day notes for the month — always the latest (notes aren't versioned)."""
+    _validate_month(month)
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division(user, division_id)
+    return service.get_monthly_notes(division_id, month)
+
+
+@router.put("/dayNotes", response_model=OnCallDayNotesResponse)
+def replace_on_call_day_notes(
+    division_id: UUID,
+    month: str,
+    data: OnCallDayNotesWrite,
+    service: OnCallDayNoteService = Depends(get_on_call_day_note_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    """Replaces the division+month's day notes as a whole. Any admin of the division may."""
+    _validate_month(month)
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.require_admin_role(user)
+    authz.authorize_division(user, division_id)
+    try:
+        return service.update_monthly_notes(division_id, month, data, user.id)
+    except OnCallDayNoteError as e:
+        return _day_error_response(e)
 
 
 @router.get("/history", response_model=list[OnCallShiftHistoryResponse])
@@ -129,11 +246,10 @@ def publish_on_call_version(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.post("/pull-submissions", response_model=MonthlyOnCallShiftsResponse)
-def pull_on_call_submissions(
-    unit_id: UUID, month: str,
+@router.post("/history/{version}/unpublish", response_model=OnCallShiftHistoryResponse)
+def unpublish_on_call_version(
+    unit_id: UUID, month: str, version: int,
     service: OnCallShiftService = Depends(get_on_call_shift_service),
-    unit_service: UnitService = Depends(get_unit_service),
     authz: AuthorizationService = Depends(get_authorization_service),
     current_user: dict = Depends(bind_current_user),
 ):
@@ -141,11 +257,77 @@ def pull_on_call_submissions(
     user = authz.get_logged_in_user_or_raise(current_user)
     authz.authorize_unit(user, unit_id)
     authz.require_admin_role(user)
-    division_id = _division_id_for_unit(unit_id, unit_service)
     try:
-        return service.pull_user_submissions(unit_id, division_id, month, user.id)
+        return service.unpublish_version(unit_id, month, version)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+# --- The scheduling page: its on-call constraints, rosters and day stations under one shared version ---
+
+@router.put("/scheduling", response_model=OnCallSchedulingSaveResponse)
+def save_on_call_scheduling(
+    unit_id: UUID,
+    month: str,
+    data: OnCallSchedulingSave,
+    service: OnCallSchedulingService = Depends(get_on_call_scheduling_service),
+    unit_service: UnitService = Depends(get_unit_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    """Saves the page as one new version of `unit_id`'s division+month — all of it or none. Any admin of the division
+    may save its rosters and day stations; the constraints need the admin of their unit."""
+    _validate_month(month)
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.require_admin_role(user)
+    division_id = _division_id_for_unit(unit_id, unit_service)
+    authz.authorize_division(user, division_id)
+    if data.constraints:
+        authz.authorize_unit(user, data.constraints.unit_id)
+        authz.authorize_account(user, data.account_id)
+    try:
+        return service.save(division_id, month, data, user.id)
     except OnCallVersionConflictError as e:
-        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"error": e.code, "message": e.message})
+        return _conflict_response(e)
+    except (OnCallStationDivisionMismatchError, OnCallDayStationError) as e:
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": e.code, "message": e.message})
+    except ValueError as e:
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "invalid_on_call_scheduling", "message": str(e)})
+
+
+@router.get("/scheduling/history", response_model=list[OnCallSchedulingHistoryResponse])
+def get_on_call_scheduling_history(
+    unit_id: UUID, month: str,
+    service: OnCallSchedulingService = Depends(get_on_call_scheduling_service),
+    unit_service: UnitService = Depends(get_unit_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    """Every shared version of `unit_id`'s division+month, newest first."""
+    _validate_month(month)
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.authorize_division_view(user, unit_id)
+    return service.get_history(_division_id_for_unit(unit_id, unit_service), month)
+
+
+@router.post("/scheduling/history/{version}/unpublish", status_code=status.HTTP_204_NO_CONTENT)
+def unpublish_on_call_scheduling_version(
+    unit_id: UUID, month: str, version: int,
+    service: OnCallSchedulingService = Depends(get_on_call_scheduling_service),
+    unit_service: UnitService = Depends(get_unit_service),
+    authz: AuthorizationService = Depends(get_authorization_service),
+    current_user: dict = Depends(bind_current_user),
+):
+    """Unpublishes every roster the version published."""
+    _validate_month(month)
+    user = authz.get_logged_in_user_or_raise(current_user)
+    authz.require_admin_role(user)
+    division_id = _division_id_for_unit(unit_id, unit_service)
+    authz.authorize_division(user, division_id)
+    try:
+        service.unpublish(division_id, month, version)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 def _settings_error_response(error: OnCallSettingsError) -> JSONResponse:

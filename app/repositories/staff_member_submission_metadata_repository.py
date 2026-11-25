@@ -4,32 +4,35 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models.models import FridayMode, StaffMemberSubmissionMetadata, SubmissionFeature
+from app.models.models import FridayMode, StaffMemberSubmissionMetadata, SubmissionScope
+from app.schemas.schemas import SubmissionFeature
 
 
 class StaffMemberSubmissionMetadataRepository:
+    """Every operation works on one scope's row (SCHEDULE or ON_CALL)."""
 
     def __init__(self, db: Session):
         self.db = db
 
-    def get_by_unit_month(self, unit_id: UUID, month: str):
+    def get_by_unit_month(self, unit_id: UUID, month: str, scope: SubmissionScope):
         return self.db.query(StaffMemberSubmissionMetadata).filter(
             StaffMemberSubmissionMetadata.unit_id == unit_id,
             StaffMemberSubmissionMetadata.month == month,
+            StaffMemberSubmissionMetadata.scope == scope,
         ).first()
 
     def upsert(
-        self, unit_id: UUID, month: str, start_time, end_time, updated_by: Optional[UUID],
+        self, unit_id: UUID, month: str, scope: SubmissionScope, start_time, end_time, updated_by: Optional[UUID],
         friday_mode: Optional[FridayMode] = None,
     ):
-        row = self.get_by_unit_month(unit_id, month)
+        row = self.get_by_unit_month(unit_id, month, scope)
         if row:
             row.start_time = start_time
             row.end_time = end_time
             row.updated_by = updated_by
         else:
             row = StaffMemberSubmissionMetadata(
-                unit_id=unit_id, month=month,
+                unit_id=unit_id, month=month, scope=scope,
                 start_time=start_time, end_time=end_time, updated_by=updated_by,
             )
             self.db.add(row)
@@ -38,8 +41,8 @@ class StaffMemberSubmissionMetadataRepository:
         self.db.commit()
         return row
 
-    def clear_window(self, unit_id: UUID, month: str) -> bool:
-        row = self.get_by_unit_month(unit_id, month)
+    def clear_window(self, unit_id: UUID, month: str, scope: SubmissionScope) -> bool:
+        row = self.get_by_unit_month(unit_id, month, scope)
         if not row:
             return False
         row.start_time = None
@@ -47,8 +50,10 @@ class StaffMemberSubmissionMetadataRepository:
         self.db.commit()
         return True
 
-    def mark_pulled(self, unit_id: UUID, month: str, feature: SubmissionFeature, pulled_by: Optional[UUID]):
-        row = self.get_by_unit_month(unit_id, month)
+    def mark_pulled(
+        self, unit_id: UUID, month: str, scope: SubmissionScope, feature: SubmissionFeature, pulled_by: Optional[UUID],
+    ):
+        row = self.get_by_unit_month(unit_id, month, scope)
         if not row:
             return None
         row.pull_information = {

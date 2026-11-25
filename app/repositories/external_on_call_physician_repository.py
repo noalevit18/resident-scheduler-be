@@ -32,6 +32,13 @@ class ExternalOnCallPhysicianRepository:
             ExternalOnCallPhysician.archived_at.is_(None),
         ).first()
 
+    def get_all_by_user_id(self, user_id: UUID, unit_id: UUID) -> list[ExternalOnCallPhysician]:
+        """Includes archived physicians — one user may have been connected to several over time."""
+        return self.db.query(ExternalOnCallPhysician).filter(
+            ExternalOnCallPhysician.user_id == user_id,
+            ExternalOnCallPhysician.unit_id == unit_id,
+        ).all()
+
     def get_by_ids(self, ids: list[UUID], unit_id: UUID) -> dict[UUID, ExternalOnCallPhysician]:
         """Includes archived physicians — past shifts keep referencing them."""
         if not ids:
