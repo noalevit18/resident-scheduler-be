@@ -14,6 +14,7 @@ from app.schemas.schemas import (
     ConstraintHistoryResponse,
     MonthlyConstraintsUpdate,
 )
+from app.models.models import ConstraintTypeScope
 from app.services.constraint_service import ConstraintService
 from app.services.constraint_type_service import ConstraintTypeService
 from app.services.authorization_service import AuthorizationService
@@ -116,9 +117,11 @@ def get_types(
     authz: AuthorizationService = Depends(get_authorization_service),
     current_user: dict = Depends(bind_current_user),
 ):
+    """The daily schedule's constraint types. On-call constraint types live
+    under /on-call-constraints/types."""
     user = authz.get_logged_in_user_or_raise(current_user)
     authz.authorize_account(user, account_id)
-    return service.get_all(account_id, include_deleted)
+    return service.get_all(account_id, ConstraintTypeScope.SCHEDULE, include_deleted)
 
 
 @router.get("/types/{c_id}", response_model=ConstraintTypeResponse)
@@ -131,7 +134,7 @@ def get_type(
     user = authz.get_logged_in_user_or_raise(current_user)
     authz.authorize_account(user, account_id)
     try:
-        return service.get_by_id(c_id, account_id)
+        return service.get_by_id(c_id, account_id, ConstraintTypeScope.SCHEDULE)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
@@ -178,7 +181,7 @@ def delete_type(
     authz.authorize_account(user, account_id)
     authz.require_admin_role(user)
     try:
-        service.delete(c_id, account_id)
+        service.delete(c_id, account_id, ConstraintTypeScope.SCHEDULE)
         return {"message": "Constraint type deleted successfully"}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

@@ -5,6 +5,8 @@ from app.database import get_db
 # Repositories
 from app.repositories.constraint_repository import ConstraintRepository
 from app.repositories.constraint_type_repository import ConstraintTypeRepository
+from app.repositories.on_call_constraint_repository import OnCallConstraintRepository
+from app.repositories.on_call_submission_repository import OnCallSubmissionRepository
 from app.repositories.staff_member_submission_metadata_repository import StaffMemberSubmissionMetadataRepository
 from app.repositories.staff_member_submission_repository import StaffMemberSubmissionRepository
 from app.repositories.metadata_repository import MetadataRepository
@@ -13,6 +15,9 @@ from app.repositories.senior_repository import SeniorRepository
 from app.repositories.on_call_station_repository import OnCallStationRepository
 from app.repositories.on_call_settings_repository import OnCallSettingsRepository
 from app.repositories.on_call_shift_repository import OnCallShiftRepository
+from app.repositories.on_call_day_station_repository import OnCallDayStationRepository
+from app.repositories.on_call_day_note_repository import OnCallDayNoteRepository
+from app.repositories.on_call_scheduling_version_repository import OnCallSchedulingVersionRepository
 from app.repositories.external_on_call_physician_repository import ExternalOnCallPhysicianRepository
 from app.repositories.station_repository import StationRepository
 from app.repositories.schedule_repository import ScheduleRepository
@@ -25,6 +30,8 @@ from app.repositories.special_date_repository import SpecialDateRepository
 # Services
 from app.services.constraint_service import ConstraintService
 from app.services.constraint_type_service import ConstraintTypeService
+from app.services.on_call_constraint_service import OnCallConstraintService
+from app.services.on_call_submission_service import OnCallSubmissionService
 from app.services.staff_member_submission_metadata_service import StaffMemberSubmissionMetadataService
 from app.services.staff_member_submission_service import StaffMemberSubmissionService
 from app.services.authorization_service import AuthorizationService
@@ -33,6 +40,9 @@ from app.services.senior_service import SeniorService
 from app.services.on_call_station_service import OnCallStationService
 from app.services.on_call_settings_service import OnCallSettingsService
 from app.services.on_call_shift_service import OnCallShiftService
+from app.services.on_call_day_station_service import OnCallDayStationService
+from app.services.on_call_day_note_service import OnCallDayNoteService
+from app.services.on_call_scheduling_service import OnCallSchedulingService
 from app.services.external_on_call_physician_service import ExternalOnCallPhysicianService
 from app.services.station_service import StationService
 from app.services.unit_service import UnitService
@@ -46,6 +56,8 @@ from app.services.special_date_service import SpecialDateService
 # --- Repository Factories ---
 def get_constraint_repository(db: Session = Depends(get_db)): return ConstraintRepository(db)
 def get_constraint_type_repository(db: Session = Depends(get_db)): return ConstraintTypeRepository(db)
+def get_on_call_constraint_repository(db: Session = Depends(get_db)): return OnCallConstraintRepository(db)
+def get_on_call_submission_repository(db: Session = Depends(get_db)): return OnCallSubmissionRepository(db)
 def get_staff_member_submission_metadata_repository(db: Session = Depends(get_db)): return StaffMemberSubmissionMetadataRepository(db)
 def get_staff_member_submission_repository(db: Session = Depends(get_db)): return StaffMemberSubmissionRepository(db)
 def get_staff_repository(db: Session = Depends(get_db)): return StaffRepository(db)
@@ -53,6 +65,9 @@ def get_senior_repository(db: Session = Depends(get_db)): return SeniorRepositor
 def get_on_call_station_repository(db: Session = Depends(get_db)): return OnCallStationRepository(db)
 def get_on_call_settings_repository(db: Session = Depends(get_db)): return OnCallSettingsRepository(db)
 def get_on_call_shift_repository(db: Session = Depends(get_db)): return OnCallShiftRepository(db)
+def get_on_call_day_station_repository(db: Session = Depends(get_db)): return OnCallDayStationRepository(db)
+def get_on_call_day_note_repository(db: Session = Depends(get_db)): return OnCallDayNoteRepository(db)
+def get_on_call_scheduling_version_repository(db: Session = Depends(get_db)): return OnCallSchedulingVersionRepository(db)
 def get_external_on_call_physician_repository(db: Session = Depends(get_db)): return ExternalOnCallPhysicianRepository(db)
 def get_station_repository(db: Session = Depends(get_db)): return StationRepository(db)
 def get_schedule_repository(db: Session = Depends(get_db)): return ScheduleRepository(db)
@@ -96,6 +111,29 @@ def get_constraint_service(
     constraint_type_service: ConstraintTypeService = Depends(get_constraint_type_service),
     staff_service: StaffService = Depends(get_staff_service),
 ): return ConstraintService(repo, submission_repo, submission_metadata_service, constraint_type_service, staff_service)
+def get_on_call_submission_service(
+    repo: OnCallSubmissionRepository = Depends(get_on_call_submission_repository),
+    submission_metadata_service: StaffMemberSubmissionMetadataService = Depends(get_staff_member_submission_metadata_service),
+    staff_service: StaffService = Depends(get_staff_service),
+    constraint_type_service: ConstraintTypeService = Depends(get_constraint_type_service),
+    external_physician_repo: ExternalOnCallPhysicianRepository = Depends(get_external_on_call_physician_repository),
+    user_service: UserService = Depends(get_user_service),
+): return OnCallSubmissionService(
+    repo, submission_metadata_service, staff_service, constraint_type_service,
+    ExternalOnCallPhysicianService(external_physician_repo), user_service,
+)
+def get_on_call_constraint_service(
+    repo: OnCallConstraintRepository = Depends(get_on_call_constraint_repository),
+    submission_repo: OnCallSubmissionRepository = Depends(get_on_call_submission_repository),
+    submission_metadata_service: StaffMemberSubmissionMetadataService = Depends(get_staff_member_submission_metadata_service),
+    constraint_type_service: ConstraintTypeService = Depends(get_constraint_type_service),
+    staff_service: StaffService = Depends(get_staff_service),
+    external_physician_repo: ExternalOnCallPhysicianRepository = Depends(get_external_on_call_physician_repository),
+    version_repo: OnCallSchedulingVersionRepository = Depends(get_on_call_scheduling_version_repository),
+): return OnCallConstraintService(
+    repo, submission_repo, submission_metadata_service, constraint_type_service, staff_service,
+    ExternalOnCallPhysicianService(external_physician_repo), version_repo,
+)
 def get_staff_member_submission_service(
     repo: StaffMemberSubmissionRepository = Depends(get_staff_member_submission_repository),
     submission_metadata_service: StaffMemberSubmissionMetadataService = Depends(get_staff_member_submission_metadata_service),
@@ -116,13 +154,27 @@ def get_on_call_settings_service(
 def get_external_on_call_physician_service(
     repo: ExternalOnCallPhysicianRepository = Depends(get_external_on_call_physician_repository),
 ): return ExternalOnCallPhysicianService(repo)
+def get_on_call_day_station_service(
+    repo: OnCallDayStationRepository = Depends(get_on_call_day_station_repository),
+    version_repo: OnCallSchedulingVersionRepository = Depends(get_on_call_scheduling_version_repository),
+): return OnCallDayStationService(repo, version_repo)
+def get_on_call_day_note_service(
+    repo: OnCallDayNoteRepository = Depends(get_on_call_day_note_repository),
+): return OnCallDayNoteService(repo)
 def get_on_call_shift_service(
     repo: OnCallShiftRepository = Depends(get_on_call_shift_repository),
     on_call_station_service: OnCallStationService = Depends(get_on_call_station_service),
     staff_service: StaffService = Depends(get_staff_service),
-    submission_repo: StaffMemberSubmissionRepository = Depends(get_staff_member_submission_repository),
-    submission_metadata_service: StaffMemberSubmissionMetadataService = Depends(get_staff_member_submission_metadata_service),
-): return OnCallShiftService(repo, on_call_station_service, staff_service, submission_repo, submission_metadata_service)
+    external_physician_service: ExternalOnCallPhysicianService = Depends(get_external_on_call_physician_service),
+    version_repo: OnCallSchedulingVersionRepository = Depends(get_on_call_scheduling_version_repository),
+): return OnCallShiftService(repo, on_call_station_service, staff_service, external_physician_service, version_repo)
+def get_on_call_scheduling_service(
+    version_repo: OnCallSchedulingVersionRepository = Depends(get_on_call_scheduling_version_repository),
+    shift_repo: OnCallShiftRepository = Depends(get_on_call_shift_repository),
+    constraint_service: OnCallConstraintService = Depends(get_on_call_constraint_service),
+    shift_service: OnCallShiftService = Depends(get_on_call_shift_service),
+    day_station_service: OnCallDayStationService = Depends(get_on_call_day_station_service),
+): return OnCallSchedulingService(version_repo, shift_repo, constraint_service, shift_service, day_station_service)
 def get_station_service(
     repo: StationRepository = Depends(get_station_repository),
     on_call_station_service: OnCallStationService = Depends(get_on_call_station_service),
@@ -142,3 +194,4 @@ def get_certification_service(repo: StaffCertificationRepository = Depends(get_c
 def get_staff_rotation_service(repo: StaffRotationRepository = Depends(get_staff_rotation_repository)): return StaffRotationService(repo)
 def get_staff_settings_service(certification_service: StaffCertificationService = Depends(get_certification_service),
                                rotation_service: StaffRotationService = Depends(get_staff_rotation_service)): return StaffSettingsService(certification_service, rotation_service)
+

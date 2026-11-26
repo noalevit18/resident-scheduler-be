@@ -64,11 +64,17 @@ class SpecialDateType(str, enum.Enum):
 class SubmissionFeature(str, enum.Enum):
     constraints = "constraints"
     on_call = "on_call"
+    on_call_constraints = "on_call_constraints"
 
 
 class ConstraintTypeKind(str, enum.Enum):
     blocking = "blocking"
     preference = "preference"
+
+
+class ConstraintTypeScope(str, enum.Enum):
+    schedule = "schedule"
+    on_call = "on_call"
 
 
 class FridayMode(str, enum.Enum):
@@ -91,6 +97,11 @@ class UnitMode(str, enum.Enum):
 
 
 MAX_FRIDAY_RANK = 5
+
+# On-call constraint scale: 2 = want, 1 = prefer, 0 = can (the default, never
+# stored), -1 = prefer not, -2 = can't. A hard on-call type counts as -2.
+MIN_ON_CALL_PREFERENCE = -2
+MAX_ON_CALL_PREFERENCE = 2
 
 
 # ==========================================
@@ -765,6 +776,86 @@ class OnCallShiftEntry(SnakeCaseModel):
     station_assignments: Dict[UUID, int] = Field(default_factory=dict)
 
 
+class OnCallDayStationEntry(SnakeCaseModel):
+    """A change to a unit's stations on a day: `is_added` true adds the
+    station, false removes it from what its rotation gives the unit."""
+    date: date
+    station_id: int
+    is_added: bool
+    # "Turns" stations: the change re-flows the rest of the month's turns (see OnCallDayStation).
+    shifts_turns: bool = False
+
+
+class OnCallDayStationsWrite(SnakeCaseModel):
+    """The unit+month's complete set of day-station changes; it replaces the saved one."""
+    entries: List[OnCallDayStationEntry] = Field(default_factory=list)
+
+    @field_validator("entries")
+    @classmethod
+    def _one_change_per_station_day(cls, value: List[OnCallDayStationEntry]) -> List[OnCallDayStationEntry]:
+        seen: set[tuple[date, int]] = set()
+        for entry in value:
+            key = (entry.date, entry.station_id)
+            if key in seen:
+                raise ValueError(f"station {entry.station_id} is changed twice on {entry.date.isoformat()}")
+            seen.add(key)
+        return value
+
+
+class OnCallDayStationsResponse(SnakeCaseModel):
+    unit_id: UUID
+    month: str
+    version: int = 0
+    entries: List[OnCallDayStationEntry] = Field(default_factory=list)
+
+
+class OnCallDayVersionHistoryResponse(SnakeCaseModel):
+    """One saved version of a month's day stations."""
+    model_config = ConfigDict(from_attributes=True)
+
+    version: int
+    created_at: datetime
+    created_by: Optional[UUID] = None
+
+
+ON_CALL_DAY_NOTE_MAX_LENGTH = 500
+
+
+class OnCallDayNoteEntry(SnakeCaseModel):
+    """A note on a day of the division's on-call roster."""
+    date: date
+    text: str = Field(..., max_length=ON_CALL_DAY_NOTE_MAX_LENGTH)
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("a day note can't be empty")
+        return stripped
+
+
+class OnCallDayNotesWrite(SnakeCaseModel):
+    """The division+month's complete set of day notes; it replaces the saved one."""
+    entries: List[OnCallDayNoteEntry] = Field(default_factory=list)
+
+    @field_validator("entries")
+    @classmethod
+    def _one_note_per_day(cls, value: List[OnCallDayNoteEntry]) -> List[OnCallDayNoteEntry]:
+        seen: set[date] = set()
+        for entry in value:
+            if entry.date in seen:
+                raise ValueError(f"{entry.date.isoformat()} has more than one note")
+            seen.add(entry.date)
+        return value
+
+
+class OnCallDayNotesResponse(SnakeCaseModel):
+    division_id: UUID
+    month: str
+    entries: List[OnCallDayNoteEntry] = Field(default_factory=list)
+
+
 class MonthlyOnCallShiftsUpdate(SnakeCaseModel):
     """`entries` is the complete set of dates the month should have — any
     previously-saved date missing from it is treated as deleted (no
@@ -837,11 +928,25 @@ class ConstraintTypeUpdate(SnakeCaseModel):
     preference: Optional[int] = Field(None, ge=-1, le=1)
 
 
+class OnCallConstraintTypeCreate(SnakeCaseModel):
+    """An on-call constraint type is always a hard "can't" reason (vacation,
+    army, ...), so only its name and color are set."""
+    account_id: UUID
+    name: str = Field(..., min_length=1, max_length=100)
+    color: ConstraintTypeColor
+
+
+class OnCallConstraintTypeUpdate(SnakeCaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    color: Optional[ConstraintTypeColor] = None
+
+
 class ConstraintTypeResponse(ConstraintType):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     account_id: UUID
+    scope: ConstraintTypeScope = ConstraintTypeScope.schedule
     color: Optional[ConstraintTypeColor] = None
     created_at: datetime
     updated_at: datetime
@@ -903,6 +1008,15 @@ class MonthlyConstraintsUpdate(SnakeCaseModel):
     entries: List[ConstraintEntry]
 
 
+def _validate_on_call_value(type_id: Optional[int], preference: Optional[int], allow_empty: bool) -> None:
+    if type_id is not None and preference is not None:
+        raise ValueError("An on-call constraint is either a preference or a constraint type, not both")
+    if not allow_empty and type_id is None and preference is None:
+        raise ValueError("An on-call constraint needs a preference or a constraint type")
+    if preference == 0:
+        raise ValueError("Preference 0 (can) is the default and is not stored")
+
+
 class ConstraintResponse(SnakeCaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -913,6 +1027,51 @@ class ConstraintResponse(SnakeCaseModel):
     staff_member_ids: List[UUID]
     submitted_staff_member_ids: List[UUID] = Field(default_factory=list)
     staff_member_ranks: Dict[UUID, int] = Field(default_factory=dict)
+    version: int
+    created_at: datetime
+    created_by: Optional[UUID] = None
+
+
+# ==========================================
+# ON-CALL CONSTRAINT SCHEMAS
+# ==========================================
+
+class OnCallConstraintEntry(SnakeCaseModel):
+    date: date
+    # Exactly one of: a hard on-call constraint type (counts as can't), or a scale preference.
+    type_id: Optional[int] = None
+    preference: Optional[int] = Field(None, ge=MIN_ON_CALL_PREFERENCE, le=MAX_ON_CALL_PREFERENCE)
+    staff_member_ids: List[UUID] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _type_xor_preference(self):
+        _validate_on_call_value(self.type_id, self.preference, allow_empty=False)
+        return self
+
+
+class MonthlyOnCallConstraintsUpdate(SnakeCaseModel):
+    entries: List[OnCallConstraintEntry]
+
+
+class OnCallConstraintResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    unit_id: UUID
+    date: date
+    type_id: Optional[int] = None
+    preference: Optional[int] = None
+    staff_member_ids: List[UUID]
+    submitted_staff_member_ids: List[UUID] = Field(default_factory=list)
+    version: int
+    created_at: datetime
+    created_by: Optional[UUID] = None
+
+
+class OnCallConstraintHistoryResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
     version: int
     created_at: datetime
     created_by: Optional[UUID] = None
@@ -930,6 +1089,11 @@ class ConstraintUserComments(SnakeCaseModel):
 
 class MonthlyConstraintsResponse(SnakeCaseModel):
     constraints: List[ConstraintResponse]
+    user_comments: List[ConstraintUserComments]
+
+
+class MonthlyOnCallConstraintsResponse(SnakeCaseModel):
+    constraints: List[OnCallConstraintResponse]
     user_comments: List[ConstraintUserComments]
 
 
@@ -976,6 +1140,28 @@ class PullInformationEntry(SnakeCaseModel):
         return value
 
 
+class OnCallSubmissionWindowUpdate(SnakeCaseModel):
+    """The on-call constraints' own submission window (no Friday mode)."""
+    unit_id: UUID
+    month: str
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
+
+class OnCallSubmissionWindowResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    unit_id: UUID
+    month: str
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    updated_by: Optional[UUID] = None
+    pull_information: Dict[SubmissionFeature, PullInformationEntry] = {}
+    created_at: datetime
+    updated_at: datetime
+
+
 class SubmissionWindowResponse(SnakeCaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -998,7 +1184,6 @@ class SubmissionWindowResponse(SnakeCaseModel):
 class StaffMemberSubmissionEntry(SnakeCaseModel):
     date: Optional[dt.date] = None  # None => the month's general-comment row
     constraint_type_id: Optional[int] = None
-    on_call_station_id: Optional[int] = None
     comment: Optional[str] = Field(None, max_length=1024)
     rank: Optional[int] = Field(None, ge=1, le=MAX_FRIDAY_RANK)
 
@@ -1011,6 +1196,47 @@ class StaffMemberSubmissionEntry(SnakeCaseModel):
 
 class MemberMonthlySubmissionUpdate(SnakeCaseModel):
     entries: List[StaffMemberSubmissionEntry]
+
+
+# ==========================================
+# STAFF MEMBER ON-CALL SUBMISSION SCHEMAS (member-facing, on-call constraints only)
+# ==========================================
+
+class OnCallSubmissionEntry(SnakeCaseModel):
+    date: Optional[dt.date] = None  # None => the month's general-comment row
+    # At most one of: a scale preference, or a hard on-call constraint type (counts as can't).
+    preference: Optional[int] = Field(None, ge=MIN_ON_CALL_PREFERENCE, le=MAX_ON_CALL_PREFERENCE)
+    constraint_type_id: Optional[int] = None
+    comment: Optional[str] = Field(None, max_length=1024)
+
+    @model_validator(mode="after")
+    def _valid_value(self):
+        _validate_on_call_value(self.constraint_type_id, self.preference, allow_empty=True)
+        if self.date is None and (self.preference is not None or self.constraint_type_id is not None):
+            raise ValueError("An on-call constraint needs a date")
+        return self
+
+
+class MemberMonthlyOnCallSubmissionUpdate(SnakeCaseModel):
+    entries: List[OnCallSubmissionEntry]
+
+
+class OnCallSubmissionResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    unit_id: UUID
+    # Exactly one is set: the submitter is a staff member or an external on-call physician.
+    staff_member_id: Optional[UUID] = None
+    external_physician_id: Optional[UUID] = None
+    month: str
+    date: Optional[dt.date] = None
+    preference: Optional[int] = None
+    constraint_type_id: Optional[int] = None
+    comment: Optional[str] = None
+    submitted_empty: bool = False
+    created_at: datetime
+    updated_at: datetime
 
 
 # ==========================================
@@ -1028,6 +1254,14 @@ class StaffSubmissionStatusResponse(SnakeCaseModel):
     submitted: bool
 
 
+class OnCallSubmissionStatusResponse(SnakeCaseModel):
+    """A staff member's or an external on-call physician's — exactly one id is set."""
+    staff_member_id: Optional[UUID] = None
+    external_physician_id: Optional[UUID] = None
+    name: str
+    submitted: bool
+
+
 class StaffMemberSubmissionResponse(SnakeCaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -1037,6 +1271,7 @@ class StaffMemberSubmissionResponse(SnakeCaseModel):
     month: str
     date: Optional[dt.date] = None
     constraint_type_id: Optional[int] = None
+    # Legacy, read-only: on-call station requests from before the on-call constraints form.
     on_call_station_id: Optional[int] = None
     comment: Optional[str] = None
     rank: Optional[int] = None
@@ -1088,3 +1323,49 @@ class UserResponse(User):
     # user in it — e.g. a pure admin account); True/False otherwise.
     constraints_submitted_this_month: Optional[bool] = None
 
+
+# --- Shared on-call scheduling versions: one save of the scheduling page ---
+
+class OnCallSchedulingConstraintsWrite(SnakeCaseModel):
+    unit_id: UUID
+    entries: List[OnCallConstraintEntry]
+
+
+class OnCallSchedulingRosterWrite(SnakeCaseModel):
+    """A unit's complete month (see MonthlyOnCallShiftsUpdate)."""
+    unit_id: UUID
+    entries: List[OnCallShiftEntry] = Field(default_factory=list)
+
+
+class OnCallSchedulingDayStationsWrite(OnCallDayStationsWrite):
+    unit_id: UUID
+
+
+class OnCallSchedulingSave(SnakeCaseModel):
+    """Everything the scheduling page saves, written together under one shared version. `is_published` publishes
+    every roster in `rosters`."""
+    account_id: UUID
+    constraints: Optional[OnCallSchedulingConstraintsWrite] = None
+    rosters: List[OnCallSchedulingRosterWrite] = Field(default_factory=list)
+    day_stations: List[OnCallSchedulingDayStationsWrite] = Field(default_factory=list)
+    is_published: bool = False
+
+
+class OnCallSchedulingSaveResponse(SnakeCaseModel):
+    version: int
+
+
+class OnCallSchedulingVersionEntityResponse(SnakeCaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    unit_id: UUID
+    kind: str
+
+
+class OnCallSchedulingHistoryResponse(SnakeCaseModel):
+    """One shared version of a division+month: what it saved, and whose rosters it published."""
+    version: int
+    created_at: datetime
+    created_by: Optional[UUID] = None
+    entities: List[OnCallSchedulingVersionEntityResponse] = Field(default_factory=list)
+    published_unit_ids: List[UUID] = Field(default_factory=list)

@@ -11,6 +11,7 @@ from app.schemas.schemas import (
     SubmissionWindowResponse,
     SubmissionWindowUpdate,
 )
+from app.models.models import SubmissionScope
 from app.services.staff_member_submission_service import StaffMemberSubmissionService
 from app.services.staff_member_submission_metadata_service import StaffMemberSubmissionMetadataService, SubmissionWindowError
 from app.services.authorization_service import AuthorizationService
@@ -100,7 +101,7 @@ def get_staff_member_submission_metadata(
     _validate_month(month)
     user = authz.get_logged_in_user_or_raise(current_user)
     authz.authorize_unit_view(user, unit_id)
-    return service.get(unit_id, month)
+    return service.get(unit_id, month, SubmissionScope.SCHEDULE)
 
 
 @router.post("/metadata", status_code=status.HTTP_204_NO_CONTENT)
@@ -131,4 +132,4 @@ def delete_staff_member_submission_metadata(
     user = authz.get_logged_in_user_or_raise(current_user)
     authz.authorize_unit(user, unit_id)
     authz.require_admin_role(user)
-    service.clear_window(unit_id, month)
+    service.clear_window(unit_id, month, SubmissionScope.SCHEDULE)

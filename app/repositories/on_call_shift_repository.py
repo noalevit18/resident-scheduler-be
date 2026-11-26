@@ -4,10 +4,10 @@ from datetime import date
 from typing import List, Optional, Tuple
 from uuid import UUID
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.models import OnCallShift, MonthOnCallVersion
+from app.repositories.constraint_repository import VersionConflictError
 from app.schemas.schemas import OnCallShiftEntry
 
 logger = logging.getLogger(__name__)
@@ -24,11 +24,8 @@ def month_bounds(month: str) -> Tuple[date, date]:
     return start, end
 
 
-class OnCallVersionConflictError(Exception):
-    def __init__(self, code: str, message: str):
-        self.code = code
-        self.message = message
-        super().__init__(message)
+class OnCallVersionConflictError(VersionConflictError):
+    """A concurrent save took the version being written (409)."""
 
 
 def _keys_to_str(assignments: dict) -> dict:
@@ -109,48 +106,69 @@ class OnCallShiftRepository:
         self.db.refresh(row)
         return row
 
+    def unpublish_versions(self, unit_ids: List[UUID], month: str, version: int) -> List[MonthOnCallVersion]:
+        """Clears the units' rosters' published state at `version` in place, together; returns the rows found."""
+        rows = (
+            self.db.query(MonthOnCallVersion)
+            .filter(
+                MonthOnCallVersion.unit_id.in_(unit_ids),
+                MonthOnCallVersion.month == month,
+                MonthOnCallVersion.version == version,
+            )
+            .with_for_update()
+            .all()
+        )
+        for row in rows:
+            row.is_published = False
+            row.published_at = None
+            row.published_by = None
+        self.db.commit()
+        for row in rows:
+            self.db.refresh(row)
+        return rows
+
+    def get_published_unit_ids(self, unit_ids: List[UUID], month: str, version: int) -> List[UUID]:
+        """Which of the units' rosters are published at exactly `version`."""
+        rows = (
+            self.db.query(MonthOnCallVersion.unit_id)
+            .filter(
+                MonthOnCallVersion.unit_id.in_(unit_ids),
+                MonthOnCallVersion.month == month,
+                MonthOnCallVersion.version == version,
+                MonthOnCallVersion.is_published.is_(True),
+            )
+            .all()
+        )
+        return [row.unit_id for row in rows]
+
     def save_entries_snapshot(
         self, unit_id: UUID, division_id: UUID, month: str,
         entries: List[OnCallShiftEntry], created_by: Optional[UUID],
-        is_published: bool,
-        submitted_assignments_by_date: Optional[dict] = None,
+        is_published: bool, version: int,
     ) -> List[OnCallShift]:
-        """`entries` is the complete desired state for the month: any
-        previously-saved date missing from it gets no row in the new
-        version — the prior version's row is untouched (insert-only), but
-        the date is gone as of this version, which is all a "delete" can
+        """Writes the month as the unit's roster at `version` (a shared on-call scheduling version), without
+        committing — the caller commits with the rest of the version. `entries` is the complete desired state for
+        the month: any previously-saved date missing from it gets no row in the new version — the prior version's
+        row is untouched (insert-only), but the date is gone as of this version, which is all a "delete" can
         mean here."""
-        submitted_assignments_by_date = submitted_assignments_by_date or {}
-
-        for _ in range(3):  # retry covers a race between two concurrent first-time-or-latest saves
-            version_row = self._get_latest_version_row(unit_id, month, for_update=True)
-            next_version = (version_row.version if version_row else 0) + 1
-
-            rows = [
-                OnCallShift(
-                    division_id=division_id, unit_id=unit_id, date=e.date,
-                    station_assignments=_keys_to_str(e.station_assignments),
-                    submitted_assignments=submitted_assignments_by_date.get(e.date, {}),
-                    version=next_version, created_by=created_by,
-                )
-                for e in entries
-            ]
-            self.db.add_all(rows)
-
-            self.db.add(MonthOnCallVersion(
-                unit_id=unit_id, month=month, version=next_version, is_published=is_published,
-                published_at=date.today() if is_published else None,
-                published_by=created_by if is_published else None,
-                created_by=created_by,
-            ))
-
-            try:
-                self.db.commit()
-                logger.info(
-                    "save_entries_snapshot (on_call): %d rows (unit_id=%s, month=%s, version=%d)",
-                    len(rows), unit_id, month, next_version,
-                )
-                return rows
-            except IntegrityError:
-                self.db.rollback()
-        raise OnCallVersionConflictError("on_call_shifts_version_conflict", "Concurrent update detected — please retry")
+        rows = [
+            OnCallShift(
+                division_id=division_id, unit_id=unit_id, date=e.date,
+                station_assignments=_keys_to_str(e.station_assignments),
+                submitted_assignments={},
+                version=version, created_by=created_by,
+            )
+            for e in entries
+        ]
+        self.db.add_all(rows)
+        self.db.add(MonthOnCallVersion(
+            unit_id=unit_id, month=month, version=version, is_published=is_published,
+            published_at=date.today() if is_published else None,
+            published_by=created_by if is_published else None,
+            created_by=created_by,
+        ))
+        logger.info(
+            "save_entries_snapshot (on_call): %d rows (unit_id=%s, month=%s, version=%d)",
+            len(rows), unit_id, month, version,
+        )
+        return rows

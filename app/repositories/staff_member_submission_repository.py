@@ -58,7 +58,7 @@ class StaffMemberSubmissionRepository:
                 elif comment_text:
                     comment_row = StaffMemberSubmission(
                         unit_id=unit_id, staff_member_id=staff_member_id, month=month,
-                        date=None, constraint_type_id=None, on_call_station_id=None, comment=comment_text,
+                        date=None, constraint_type_id=None, comment=comment_text,
                     )
                     self.db.add(comment_row)
                     results.append(comment_row)
@@ -67,35 +67,39 @@ class StaffMemberSubmissionRepository:
             seen_dates.add(entry.date)
             row = rows_by_date.get(entry.date)
             if row:
-                # Full-row replace each call — both fields are always set
-                # together, never independently partial-updated.
+                # Full replace of the form's fields; a legacy on_call_station_id is left as is.
                 row.constraint_type_id = entry.constraint_type_id
-                row.on_call_station_id = entry.on_call_station_id
                 row.comment = entry.comment or None
                 row.rank = entry.rank
             else:
                 row = StaffMemberSubmission(
                     unit_id=unit_id, staff_member_id=staff_member_id, month=month,
                     date=entry.date, constraint_type_id=entry.constraint_type_id,
-                    on_call_station_id=entry.on_call_station_id, comment=entry.comment or None,
-                    rank=entry.rank,
+                    comment=entry.comment or None, rank=entry.rank,
                 )
                 self.db.add(row)
                 rows_by_date[entry.date] = row
             results.append(row)
 
         for date_key, row in rows_by_date.items():
-            if date_key not in seen_dates:
-                self.db.delete(row)
-                if row in results:
-                    results.remove(row)
+            if date_key in seen_dates:
+                continue
+            if row.on_call_station_id is not None:
+                # Keep the legacy on-call station request; clear only the form's fields.
+                row.constraint_type_id = None
+                row.comment = None
+                row.rank = None
+                continue
+            self.db.delete(row)
+            if row in results:
+                results.remove(row)
 
         # Every call leaves at least the general-comment row (date IS NULL) behind.
         # That marks that this member submitted the form for this month, even if all the dates are empty.
         if comment_row is None:
             comment_row = StaffMemberSubmission(
                 unit_id=unit_id, staff_member_id=staff_member_id, month=month,
-                date=None, constraint_type_id=None, on_call_station_id=None, comment=None,
+                date=None, constraint_type_id=None, comment=None,
             )
             self.db.add(comment_row)
         comment_row.submitted_empty = submitted_empty

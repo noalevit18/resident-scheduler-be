@@ -17,7 +17,8 @@
       "Read(//Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src/**)",
       "Bash(cd /Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src && grep -rln \"isEmailLinkSignIn\\\\|getStoredEmailForSignIn\\\\|completeEmailLinkSignIn\" . 2>/dev/null)",
       "Read(//Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src/components/pages/**)",
-      "Bash(grep -n \"needsConfirmation\\\\|isEmailLinkSignIn\\\\|getStoredEmailForSignIn\\\\|completeEmailLinkSignIn\\\\|useEffect\" /Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src/components/pages/HomePage.tsx)"
+      "Bash(grep -n \"needsConfirmation\\\\|isEmailLinkSignIn\\\\|getStoredEmailForSignIn\\\\|completeEmailLinkSignIn\\\\|useEffect\" /Users/reuvenlevitsky/Documents/Noa/resident-scheduler/resident-scheduler-fe/src/components/pages/HomePage.tsx)",
+      "Bash(python3 -)"
     ]
   }
 }
